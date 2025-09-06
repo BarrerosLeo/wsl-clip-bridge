@@ -1,0 +1,18 @@
+# wsl-clip-bridge configuration
+
+# Clipboard TTL in seconds (default: 300)
+ttl_secs = 300
+
+# Maximum image dimension in pixels (0 = no downscaling)
+# Recommended: 1568 for Claude API
+max_image_dimension = 1568
+
+# Security settings
+max_file_size_mb = 100
+restrict_to_home = true
+
+# Optional: Whitelist specific directories
+# allowed_directories = [
+#   "/mnt/c/Users/YOUR_USERNAME/Pictures/ShareX",
+#   "/tmp"
+# ]

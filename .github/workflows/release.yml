@@ -1,0 +1,203 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - '.github/workflows/release.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build Release - ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: amd64
+            strip_cmd: strip
+          - target: aarch64-unknown-linux-gnu
+            arch: arm64
+            strip_cmd: aarch64-linux-gnu-strip
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: ${{ matrix.target }}
+    
+    - name: Install cross-compilation tools for ARM64
+      if: matrix.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-${{ matrix.target }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Configure cargo for cross-compilation
+      if: matrix.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        mkdir -p .cargo
+        cat >> .cargo/config.toml <<EOF
+        [target.aarch64-unknown-linux-gnu]
+        linker = "aarch64-linux-gnu-gcc"
+        EOF
+    
+    - name: Build release binary
+      run: |
+        cargo build --release --locked --target ${{ matrix.target }}
+        ${{ matrix.strip_cmd }} target/${{ matrix.target }}/release/xclip
+    
+    - name: Create tarball
+      run: |
+        mkdir -p wsl-clip-bridge
+        cp target/${{ matrix.target }}/release/xclip wsl-clip-bridge/
+        cp -r scripts wsl-clip-bridge/
+        cp -r config wsl-clip-bridge/
+        cp README.md wsl-clip-bridge/
+        tar czf wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz wsl-clip-bridge
+    
+    - name: Create checksums
+      run: |
+        # Create checksum for tarball
+        sha256sum wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz > wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256
+        # Create checksum for binary
+        sha256sum target/${{ matrix.target }}/release/xclip > xclip-${{ matrix.arch }}.sha256
+        # Create combined checksums file
+        cat wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256 > checksums-${{ matrix.arch }}.txt
+        echo "xclip-${{ matrix.arch }}  $(sha256sum target/${{ matrix.target }}/release/xclip | cut -d' ' -f1)" >> checksums-${{ matrix.arch }}.txt
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-${{ matrix.arch }}
+        path: |
+          wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz
+          wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256
+          checksums-${{ matrix.arch }}.txt
+          target/${{ matrix.target }}/release/xclip
+          xclip-${{ matrix.arch }}.sha256
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    
+    - name: Prepare release files
+      run: |
+        mkdir -p release
+        # Move all artifacts to release directory
+        mv artifacts/release-amd64/* release/
+        mv artifacts/release-arm64/* release/
+        # Rename binaries to include architecture
+        mv release/xclip release/xclip-amd64
+        cp artifacts/release-arm64/xclip release/xclip-arm64
+        # Move individual checksum files
+        mv release/xclip-amd64.sha256 release/
+        mv artifacts/release-arm64/xclip-arm64.sha256 release/
+        # Combine checksums
+        cat release/checksums-*.txt > release/checksums.txt
+        rm release/checksums-*.txt
+    
+    - name: Generate Release Tag
+      id: tag
+      run: echo "TAG=v$(date +'%Y.%m.%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.tag.outputs.TAG }}
+        name: Release ${{ steps.tag.outputs.TAG }}
+        body: |
+          ## Installation
+          
+          ### Quick Install (WSL - x64/AMD64)
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/latest/download/wsl-clip-bridge-linux-amd64.tar.gz
+          tar xzf wsl-clip-bridge-linux-amd64.tar.gz
+          cd wsl-clip-bridge
+          ./scripts/install-wsl.sh
+          ```
+          
+          ### Quick Install (WSL - ARM64)
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/latest/download/wsl-clip-bridge-linux-arm64.tar.gz
+          tar xzf wsl-clip-bridge-linux-arm64.tar.gz
+          cd wsl-clip-bridge
+          ./scripts/install-wsl.sh
+          ```
+          
+          ### Binary Only (x64/AMD64)
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/latest/download/xclip-amd64
+          chmod +x xclip-amd64
+          sudo mv xclip-amd64 /usr/local/bin/xclip
+          ```
+          
+          ### Binary Only (ARM64)
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/latest/download/xclip-arm64
+          chmod +x xclip-arm64
+          sudo mv xclip-arm64 /usr/local/bin/xclip
+          ```
+          
+          ## Checksums
+          
+          SHA256 checksums are provided for all release files:
+          - Individual `.sha256` files for each binary
+          - `checksums.txt` containing all checksums
+          
+          To verify a download:
+          ```bash
+          sha256sum -c xclip-amd64.sha256
+          # or
+          grep "xclip-amd64" checksums.txt | sha256sum -c
+          ```
+          
+          ## Supported Architectures
+          - **x64/AMD64**: For standard Intel/AMD processors
+          - **ARM64**: For ARM-based Windows devices (Surface Pro X, Windows on ARM)
+        files: |
+          release/wsl-clip-bridge-linux-amd64.tar.gz
+          release/wsl-clip-bridge-linux-amd64.tar.gz.sha256
+          release/wsl-clip-bridge-linux-arm64.tar.gz
+          release/wsl-clip-bridge-linux-arm64.tar.gz.sha256
+          release/xclip-amd64
+          release/xclip-amd64.sha256
+          release/xclip-arm64
+          release/xclip-arm64.sha256
+          release/checksums.txt
+        draft: false
+        prerelease: false

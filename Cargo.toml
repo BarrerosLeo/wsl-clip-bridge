@@ -1,0 +1,31 @@
+[package]
+name = "wsl-clip-bridge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Secure xclip replacement for WSL clipboard sharing"
+repository = "https://github.com/camjac251/wsl-clip-bridge"
+keywords = ["wsl", "clipboard", "xclip", "sharex"]
+categories = ["command-line-utilities", "os::windows-apis"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+
+[[bin]]
+name = "xclip"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"

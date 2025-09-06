@@ -1,0 +1,49 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Testing & Profiling
+*.profdata
+*.profraw
+tarpaulin-report.html
+flamegraph.svg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.*.sw[a-z]
+Session.vim
+.netrwhist
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+.Trash-*
+
+# Project
+config.toml
+!config/config.toml.example
+*.bin
+test_*
+
+# Temporary
+*.tmp
+*.log
+*.bak
+*.backup
+*.orig
+.cache/
+/tmp/
+
+# Build output in root
+xclip
+!src/
+
+# Archives
+*.tar.gz
+*.zip
