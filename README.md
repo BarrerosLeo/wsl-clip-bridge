@@ -136,9 +136,29 @@ if "%~1"=="" (
     exit /b 1
 )
 
+rem Get file extension to determine MIME type
+set "EXT=%~x1"
+set "EXT=%EXT:~1%"
+
+rem Set MIME type based on extension
+if /i "%EXT%"=="png" (
+    set "MIME=image/png"
+) else if /i "%EXT%"=="jpg" (
+    set "MIME=image/jpeg"
+) else if /i "%EXT%"=="jpeg" (
+    set "MIME=image/jpeg"
+) else if /i "%EXT%"=="gif" (
+    set "MIME=image/gif"
+) else if /i "%EXT%"=="webp" (
+    set "MIME=image/webp"
+) else (
+    rem Default to PNG if unknown
+    set "MIME=image/png"
+)
+
 rem Convert Windows path to WSL path and copy to clipboard
 for /f "usebackq tokens=*" %%i in (`wsl -d Ubuntu wslpath -u "%~1"`) do set WSLPATH=%%i
-wsl -d Ubuntu bash -lc "xclip -selection clipboard -t image/png -i '%WSLPATH%'"
+wsl -d Ubuntu xclip -selection clipboard -t %MIME% -i "%WSLPATH%"
 
 if %ERRORLEVEL% NEQ 0 (
     echo Error: Failed to copy image to WSL clipboard

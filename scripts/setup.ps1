@@ -777,6 +777,24 @@ if (-not $SkipShareX) {
                 # Use a safer approach with escaped distribution name
                 $safeDistName = $selectedDist -replace '[^a-zA-Z0-9_-]', ''
 
+                # Determine xclip path based on installation type
+                # Get the WSL username
+                $wslUser = wsl -d $selectedDist -- bash -c "echo `$USER" 2>$null
+                if ($wslUser) {
+                    $wslUser = $wslUser.Trim()
+                }
+
+                # Set xclip path based on installation location
+                if ($installLocation -eq "1") {
+                    # User installation
+                    $xclipPath = "/home/$wslUser/.local/bin/xclip"
+                    Write-Info "Using user installation path: $xclipPath"
+                } else {
+                    # System installation
+                    $xclipPath = "/usr/local/bin/xclip"
+                    Write-Info "Using system installation path: $xclipPath"
+                }
+
                 $scriptContent = @"
 @echo off
 rem WSL Clip Bridge - ShareX Action Script
@@ -787,9 +805,29 @@ if "%~1"=="" (
     exit /b 1
 )
 
+rem Get file extension to determine MIME type
+set "EXT=%~x1"
+set "EXT=%EXT:~1%"
+
+rem Set MIME type based on extension
+if /i "%EXT%"=="png" (
+    set "MIME=image/png"
+) else if /i "%EXT%"=="jpg" (
+    set "MIME=image/jpeg"
+) else if /i "%EXT%"=="jpeg" (
+    set "MIME=image/jpeg"
+) else if /i "%EXT%"=="gif" (
+    set "MIME=image/gif"
+) else if /i "%EXT%"=="webp" (
+    set "MIME=image/webp"
+) else (
+    rem Default to PNG if unknown
+    set "MIME=image/png"
+)
+
 rem Convert Windows path to WSL path and copy to clipboard
 for /f "usebackq tokens=*" %%i in (``wsl -d $safeDistName wslpath -u "%~1"``) do set WSLPATH=%%i
-wsl -d $safeDistName bash -lc "xclip -selection clipboard -t image/png -i '%WSLPATH%'"
+wsl -d $safeDistName $xclipPath -selection clipboard -t %MIME% -i "%WSLPATH%"
 
 if %ERRORLEVEL% NEQ 0 (
     echo Error: Failed to copy image to WSL clipboard
@@ -838,7 +876,7 @@ if %ERRORLEVEL% NEQ 0 (
                         if ($existingAction) {
                             Write-Warn "Action '$actionName' already exists. Updating..."
                             $existingAction.Path = $scriptPath
-                            $existingAction.Args = '"%input"'
+                            $existingAction.Args = '%input'
                             $existingAction.IsActive = $true
                             $existingAction.HiddenWindow = $true
                         } else {
@@ -847,7 +885,7 @@ if %ERRORLEVEL% NEQ 0 (
                                 IsActive = $true
                                 Name = $actionName
                                 Path = $scriptPath
-                                Args = '"%input"'
+                                Args = '%input'
                                 OutputExtension = ""
                                 Extensions = ""
                                 HiddenWindow = $true
