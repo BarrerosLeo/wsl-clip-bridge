@@ -87,6 +87,11 @@ jobs:
       contents: write
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0  # Need full history for changelog
+
     - name: Download all artifacts
       uses: actions/download-artifact@v5
       with:
@@ -104,7 +109,30 @@ jobs:
 
     - name: Generate Release Tag
       id: tag
-      run: echo "TAG=v$(date +'%Y.%m.%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+      run: echo "TAG=v$(date +'%Y.%m.%d').${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate Changelog
+      id: changelog
+      run: |
+        # Get the last release tag
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+        if [ -z "$LAST_TAG" ]; then
+          echo "CHANGES=Initial release" >> "$GITHUB_OUTPUT"
+        else
+          # Generate changelog from commits since last tag
+          CHANGES=$(git log $LAST_TAG..HEAD --pretty=format:"- %s" --no-merges | head -20)
+
+          # If no changes, set a default message
+          if [ -z "$CHANGES" ]; then
+            CHANGES="- No significant changes"
+          fi
+
+          # Escape for GitHub output
+          echo "CHANGES<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
@@ -114,7 +142,8 @@ jobs:
         body: |
           Drop-in xclip replacement for WSL → Perfect for [Claude Code](https://claude.ai/code) screenshot pasting!
 
-          **Latest commit**: `${{ needs.build.outputs.sha_short }}` - ${{ needs.build.outputs.commit_message }}
+          ## What's Changed
+          ${{ steps.changelog.outputs.CHANGES }}
 
           ## Downloads
 
