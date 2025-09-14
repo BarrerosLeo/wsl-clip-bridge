@@ -543,7 +543,6 @@ Write-Section "Configuration"
 # Use optimal defaults
 $ttl = "300"  # 5 minutes
 $maxDim = "1568"  # Optimal for Claude API
-$restrictHome = "y"  # Security default
 
 if (-not $AutoConfirm) {
     Write-Host ""
@@ -558,9 +557,9 @@ if (-not $AutoConfirm) {
     Write-Host "      Default: 1568px (optimal for Claude API)" -ForegroundColor Gray
     Write-Host "      Set to 0 to disable downscaling" -ForegroundColor Gray
     Write-Host ""
-    Write-Host "    * Security - Home Directory Restriction:" -ForegroundColor Cyan
-    Write-Host "      Prevent access to files outside your home directory" -ForegroundColor Gray
-    Write-Host "      Default: Enabled (recommended for security)" -ForegroundColor Gray
+    Write-Host "    * Security - Directory Access:" -ForegroundColor Cyan
+    Write-Host "      Configured automatically based on your selections" -ForegroundColor Gray
+    Write-Host "      ShareX directories will be added if ShareX is detected" -ForegroundColor Gray
     Write-Host ""
     $customize = Read-Host "  Press Enter to use defaults, or type 'custom' to modify"
 
@@ -589,16 +588,6 @@ if (-not $AutoConfirm) {
         $customDim = Read-Host "  Enter max dimension [1568]"
         if ($customDim -and $customDim -match '^\d+$' -and [int]$customDim -ge 0 -and [int]$customDim -le 10000) {
             $maxDim = $customDim
-        }
-        Write-Host ""
-
-        # Security
-        Write-Host "  Security - Restrict File Access:" -ForegroundColor White
-        Write-Host "    y = Only allow files from home directory (safer)" -ForegroundColor Gray
-        Write-Host "    n = Allow files from anywhere (less secure)" -ForegroundColor Gray
-        $customRestrict = Read-Host "  Enable restriction? (y/n) [y]"
-        if ($customRestrict -match '^[nN]') {
-            $restrictHome = "n"
         }
     }
 }
@@ -629,7 +618,9 @@ max_image_dimension = $maxDim
 
 # Security settings
 max_file_size_mb = 100
-restrict_to_home = $(if ($restrictHome -eq 'y') { 'true' } else { 'false' })
+
+# Directory access restrictions
+# ShareX directories will be added automatically if ShareX is configured
 "@
 
     $tempConfigPath = Join-Path $env:TEMP "wsl-clip-config.toml"
@@ -661,7 +652,7 @@ restrict_to_home = $(if ($restrictHome -eq 'y') { 'true' } else { 'false' })
     Write-Host "  Settings applied:" -ForegroundColor Gray
     Write-Host "    - Clipboard TTL: $ttl seconds" -ForegroundColor Gray
     Write-Host "    - Max image size: $(if ($maxDim -eq '0') { 'Disabled (original size)' } else { "$maxDim pixels" })" -ForegroundColor Gray
-    Write-Host "    - Home restriction: $(if ($restrictHome -eq 'y') { 'Enabled (secure)' } else { 'Disabled' })" -ForegroundColor Gray
+    Write-Host "    - Directory access: Will be configured based on ShareX integration" -ForegroundColor Gray
     Write-Host "    - ShareX dirs: Will be added if ShareX is configured" -ForegroundColor DarkGray
 }
 
@@ -910,6 +901,11 @@ allowed_directories = [
                             }
                             if ($wslScreenshotsPath -and ($wslScreenshotsPath -ne $wslShareXPath)) {
                                 $allowedDirs += "`n  `"$wslScreenshotsPath`","
+                            }
+                            # Add user's home directory
+                            $homeDir = wsl -d $selectedDist -- bash -c "echo `$HOME" 2>$null
+                            if ($homeDir) {
+                                $allowedDirs += "`n  `"$homeDir`","
                             }
                             $allowedDirs += @"
 

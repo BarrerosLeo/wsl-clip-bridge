@@ -32,7 +32,7 @@ Perfect for:
 <td>
 
 **🔒 Secure**
-- Home directory jail
+- Optional path restrictions
 - Size limits
 - TTL auto-cleanup
 
@@ -192,7 +192,7 @@ graph LR
 ttl_secs = 300                  # Clipboard expiry (5 min default)
 max_image_dimension = 1568      # Auto-downscale for APIs
 max_file_size_mb = 100         # Prevent memory bombs
-restrict_to_home = true        # Security jail
+# allowed_directories = [...]   # Optional path restrictions
 ```
 
 <details>
@@ -202,10 +202,13 @@ restrict_to_home = true        # Security jail
 - `WSL_CLIP_BRIDGE_TTL_SECS` - Override TTL
 - `WSL_CLIP_BRIDGE_CONFIG` - Custom config path
 
-### Directory Whitelisting
+### Directory Access Control
+If not configured, all paths are allowed.
+To restrict access to specific directories (and their subdirectories):
 ```toml
 allowed_directories = [
-  "/mnt/c/Users/YOU/Pictures/ShareX",
+  "/mnt/c/Users/YOU/Documents/ShareX",
+  "/home/YOU",
   "/tmp"
 ]
 ```
@@ -229,8 +232,8 @@ echo $PATH   # Ensure includes install directory
 ```
 
 ### Permission Denied
-- Files must be within `$HOME` (unless whitelisted)
-- Check: `ls -la ~/.cache/wsl-clip-bridge/`
+- If `allowed_directories` is configured, file must be in those paths
+- Check config: `cat ~/.config/wsl-clip-bridge/config.toml`
 
 ### Ctrl+V Not Working in Claude Code
 1. **Terminal is intercepting Ctrl+V**: Your terminal must forward the key to the app

@@ -61,10 +61,10 @@ The tool uses file-based clipboard emulation with these paths:
 Files automatically expire based on TTL and are cleaned up on next access.
 
 ### Security Model
-1. **Path restrictions**: By default, only files within `$HOME` can be accessed
-2. **Size limits**: Configurable max file size to prevent memory exhaustion
-3. **Permission hardening**: Restrictive permissions for data files and directories
-4. **Optional whitelisting**: `allowed_directories` config for ShareX-only mode
+1. **Path access**: If `allowed_directories` is not configured, all paths are allowed
+2. **Directory restrictions**: When configured, only specified directories (and subdirectories) are accessible
+3. **Size limits**: Configurable max file size to prevent memory exhaustion
+4. **Permission hardening**: Restrictive permissions for data files and directories
 
 ### Image Processing Pipeline
 1. Accepts PNG/JPEG/GIF/WebP formats
@@ -82,8 +82,7 @@ Files automatically expire based on TTL and are cleaned up on next access.
 ttl_secs = <seconds>              # Clipboard data TTL in seconds
 max_image_dimension = <pixels>   # Max dimension for image downscaling (0 = disabled)
 max_file_size_mb = <megabytes>   # Maximum file size limit
-restrict_to_home = <boolean>     # Restrict file access to home directory
-# allowed_directories = ["<path1>", "<path2>"]  # Optional whitelist
+# allowed_directories = ["<path1>", "<path2>"]  # Optional: restrict to specific paths only
 ```
 
 ## Installation Scripts

@@ -1,18 +1,22 @@
-# wsl-clip-bridge configuration
+# WSL Clip Bridge Configuration
 
-# Clipboard TTL in seconds (default: 300)
+# Clipboard data TTL in seconds (default: 300)
 ttl_secs = 300
 
-# Maximum image dimension in pixels (0 = no downscaling)
-# Recommended: 1568 for Claude API
+# Maximum image dimension for automatic downscaling
+# Set to 1568 for optimal Claude API performance
+# Set to 0 to disable downscaling
 max_image_dimension = 1568
 
-# Security settings
+# Maximum file size in MB (default: 100)
 max_file_size_mb = 100
-restrict_to_home = true
 
-# Optional: Whitelist specific directories
+# Security: Directory access restrictions
+# If not configured, all paths are allowed
+# To restrict access to specific directories (and their subdirectories):
+#
 # allowed_directories = [
-#   "/mnt/c/Users/YOUR_USERNAME/Pictures/ShareX",
+#   "/mnt/c/Users/YOUR_USERNAME/Documents/ShareX",
+#   "/home/YOUR_USERNAME",
 #   "/tmp"
 # ]

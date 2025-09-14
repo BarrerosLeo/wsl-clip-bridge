@@ -212,43 +212,30 @@ fn validate_file_access(path: &Path) -> io::Result<()> {
             }
         }
 
-        // Check path restrictions
-        if let Some(restrict) = cfg.restrict_to_home
-            && restrict
-            && let Ok(home) = env::var("HOME")
-        {
-            let home_path = PathBuf::from(home);
-            let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-            if !canonical_path.starts_with(&home_path) {
-                eprintln!("Error: Access denied - file is outside home directory");
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "Access denied",
-                ));
-            }
-        }
-
-        // Check allowed directories
-        if let Some(allowed_dirs) = cfg.allowed_directories
+        // Security: Check allowed directories if configured
+        // If allowed_directories is set, only those paths are permitted (recursively)
+        // If not set or empty, all paths are allowed
+        if let Some(allowed_dirs) = &cfg.allowed_directories
             && !allowed_dirs.is_empty()
         {
             let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-            let mut is_allowed = false;
-            for dir in &allowed_dirs {
-                let allowed_path = PathBuf::from(dir);
-                if canonical_path.starts_with(&allowed_path) {
-                    is_allowed = true;
-                    break;
-                }
-            }
+            let is_allowed = allowed_dirs
+                .iter()
+                .any(|dir| canonical_path.starts_with(PathBuf::from(dir)));
+
             if !is_allowed {
-                eprintln!("Error: File is not in an allowed directory");
+                eprintln!(
+                    "Error: Access denied - file '{}' is not in allowed directories: {:?}",
+                    canonical_path.display(),
+                    allowed_dirs
+                );
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
-                    "Access denied",
+                    "File not in allowed directories",
                 ));
             }
         }
+        // No restrictions if allowed_directories is not configured
     }
     Ok(())
 }
@@ -418,8 +405,6 @@ struct BridgeConfig {
     #[serde(default)]
     max_file_size_mb: Option<u64>,
     #[serde(default)]
-    restrict_to_home: Option<bool>,
-    #[serde(default)]
     allowed_directories: Option<Vec<String>>,
 }
 
@@ -455,7 +440,7 @@ fn load_config() -> Option<BridgeConfig> {
                 let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
             }
         }
-        let default = "# wsl-clip-bridge config\n\n# TTL for primed data in seconds (default 300)\nttl_secs = 300\n\n# Maximum image dimension in pixels (images larger will be downscaled)\n# Recommended: 1568 for optimal Claude API performance\n# Set to 0 to disable downscaling\nmax_image_dimension = 1568\n\n# Security Settings\n\n# Maximum file size in MB (default 100MB)\nmax_file_size_mb = 100\n\n# Restrict file access to home directory only (recommended)\nrestrict_to_home = true\n\n# Optional: Only allow files from specific directories\n# Uncomment and customize for ShareX-only mode:\n# allowed_directories = [\n#   \"/mnt/c/Users/YOUR_USERNAME/Pictures/ShareX\",\n#   \"/mnt/c/Users/YOUR_USERNAME/Documents/ShareX\",\n#   \"/tmp\"\n# ]\n";
+        let default = "# WSL Clip Bridge Configuration\n\n# Clipboard data TTL in seconds (default: 300)\nttl_secs = 300\n\n# Maximum image dimension for automatic downscaling\n# Set to 1568 for optimal Claude API performance\n# Set to 0 to disable downscaling\nmax_image_dimension = 1568\n\n# Maximum file size in MB (default: 100)\nmax_file_size_mb = 100\n\n# Security: Directory access restrictions\n# If not configured, all paths are allowed\n# To restrict access to specific directories (and their subdirectories):\n#\n# allowed_directories = [\n#   \"/mnt/c/Users/YOUR_USERNAME/Documents/ShareX\",\n#   \"/home/YOUR_USERNAME\",\n#   \"/tmp\"\n# ]\n";
         let _ = fs::write(&path, default);
         #[cfg(unix)]
         {

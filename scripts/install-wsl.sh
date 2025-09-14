@@ -158,14 +158,13 @@ max_image_dimension = 1568
 # Maximum file size in MB (default: 100)
 max_file_size_mb = 100
 
-# Restrict file access to home directory only (recommended)
-restrict_to_home = true
-
-# Optional: Only allow files from specific directories
-# Uncomment and customize for ShareX-only mode:
+# Directory access restrictions
+# If not configured, all paths are allowed
+# To restrict access to specific directories (and their subdirectories):
+#
 # allowed_directories = [
-#   "/mnt/c/Users/YOUR_USERNAME/Pictures/ShareX",
 #   "/mnt/c/Users/YOUR_USERNAME/Documents/ShareX",
+#   "/home/YOUR_USERNAME",
 #   "/tmp"
 # ]
 EOF
