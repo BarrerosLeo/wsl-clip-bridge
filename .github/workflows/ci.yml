@@ -3,9 +3,19 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'scripts/**'
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
+    paths-ignore:
+      - 'scripts/**'
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
   merge_group:
     branches: [main]
 
