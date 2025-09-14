@@ -377,13 +377,14 @@ fn input_type(mime: &str, file: Option<&String>) -> io::Result<i32> {
 fn main() -> ExitCode {
     let args = parse_args();
 
-    // TARGETS or default when output mode w/o type
+    // Output mode handling
     if args.mode_output {
         let code = match args.mime_type.as_deref() {
-            None | Some("TARGETS") => {
+            Some("TARGETS") => {
                 print_targets();
                 0
             }
+            None => output_type("text/plain").unwrap_or(1), // Default to text/plain
             Some(m) => output_type(m).unwrap_or(1),
         };
         return ExitCode::from(code.try_into().unwrap_or(1));
