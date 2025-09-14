@@ -96,6 +96,15 @@ sudo install -m 755 target/release/xclip /usr/local/bin/
 
 That's it! No commands needed for the primary use case.
 
+> [!IMPORTANT]
+> **Terminal Configuration Required**: Your terminal must forward `Ctrl+V` to the application, not intercept it for paste.
+>
+> - **Windows Terminal**: Settings → Actions → Remove/unbind `Ctrl+V` shortcut
+> - **Warp**: Settings → Keyboard Shortcuts → Set "Paste" to `Ctrl+Shift+V`, Clear "Alternate Terminal Paste" (`Ctrl+V`)
+> - **Other terminals**: Look for paste shortcuts and ensure `Ctrl+V` is not bound
+>
+> Without this, `Ctrl+V` won't reach Claude Code and pasting won't work.
+
 ### Manual Commands
 
 | Action | Command |
@@ -222,6 +231,12 @@ echo $PATH   # Ensure includes install directory
 ### Permission Denied
 - Files must be within `$HOME` (unless whitelisted)
 - Check: `ls -la ~/.cache/wsl-clip-bridge/`
+
+### Ctrl+V Not Working in Claude Code
+1. **Terminal is intercepting Ctrl+V**: Your terminal must forward the key to the app
+   - Windows Terminal: Settings → Actions → Remove `Ctrl+V` binding
+   - Warp: Settings → Keyboard Shortcuts → Set "Paste" to `Ctrl+Shift+V`, Clear "Alternate Terminal Paste"
+2. Test with: `xclip -t TARGETS -o` (should show `image/png` after taking screenshot)
 
 ### Images Not Pasting
 1. Verify format: `xclip -t TARGETS -o` should show `image/png`
