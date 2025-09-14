@@ -134,61 +134,31 @@ jobs:
     - name: Generate Release Tag
       id: tag
       run: echo "TAG=v$(date +'%Y.%m.%d-%H%M%S')" >> "$GITHUB_OUTPUT"
-    
+
+    - name: Get commit info
+      id: commit
+      run: |
+        echo "SHA_SHORT=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        echo "MESSAGE=$(git log -1 --pretty=%s)" >> "$GITHUB_OUTPUT"
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.tag.outputs.TAG }}
         name: Release ${{ steps.tag.outputs.TAG }}
         body: |
-          ## Installation
-          
-          ### Quick Install (WSL - x64/AMD64)
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/latest/download/wsl-clip-bridge-linux-amd64.tar.gz
-          tar xzf wsl-clip-bridge-linux-amd64.tar.gz
-          cd wsl-clip-bridge
-          ./scripts/install-wsl.sh
-          ```
-          
-          ### Quick Install (WSL - ARM64)
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/latest/download/wsl-clip-bridge-linux-arm64.tar.gz
-          tar xzf wsl-clip-bridge-linux-arm64.tar.gz
-          cd wsl-clip-bridge
-          ./scripts/install-wsl.sh
-          ```
-          
-          ### Binary Only (x64/AMD64)
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/latest/download/xclip-amd64
-          chmod +x xclip-amd64
-          sudo mv xclip-amd64 /usr/local/bin/xclip
-          ```
-          
-          ### Binary Only (ARM64)
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/latest/download/xclip-arm64
-          chmod +x xclip-arm64
-          sudo mv xclip-arm64 /usr/local/bin/xclip
-          ```
-          
-          ## Checksums
-          
-          SHA256 checksums are provided for all release files:
-          - Individual `.sha256` files for each binary
-          - `checksums.txt` containing all checksums
-          
-          To verify a download:
-          ```bash
-          sha256sum -c xclip-amd64.sha256
-          # or
-          grep "xclip-amd64" checksums.txt | sha256sum -c
-          ```
-          
-          ## Supported Architectures
-          - **x64/AMD64**: For standard Intel/AMD processors
-          - **ARM64**: For ARM-based Windows devices (Surface Pro X, Windows on ARM)
+          Drop-in xclip replacement for WSL → Perfect for [Claude Code](https://claude.ai/code) screenshot pasting!
+
+          **Latest commit**: `${{ steps.commit.outputs.SHA_SHORT }}` - ${{ steps.commit.outputs.MESSAGE }}
+
+          ## Downloads
+
+          | Architecture | Full Package | Binary Only |
+          |--------------|--------------|-------------|
+          | **x64/AMD64** (most users) | [wsl-clip-bridge-linux-amd64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/wsl-clip-bridge-linux-amd64.tar.gz) | [xclip-amd64](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/xclip-amd64) |
+          | **ARM64** | [wsl-clip-bridge-linux-arm64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/wsl-clip-bridge-linux-arm64.tar.gz) | [xclip-arm64](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/xclip-arm64) |
+
+          📦 **[Installation Instructions](https://github.com/${{ github.repository }}#-quick-start)** • 📖 **[Full Documentation](https://github.com/${{ github.repository }}#readme)** • ✅ **[Verify with checksums.txt](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/checksums.txt)**
         files: |
           release/wsl-clip-bridge-linux-amd64.tar.gz
           release/wsl-clip-bridge-linux-amd64.tar.gz.sha256
