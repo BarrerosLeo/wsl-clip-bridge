@@ -1,44 +1,70 @@
+# ========================================
+# Continuous Integration Workflow
+# ========================================
+# Runs on every push to main and on pull requests
+# Validates code quality, formatting, and tests
+
 name: CI
 
+# ========================================
+# Triggers
+# ========================================
 on:
   push:
     branches: [main]
     paths-ignore:
-      - 'scripts/**'
-      - '**.md'
-      - 'LICENSE'
-      - '.gitignore'
+      - "scripts/**"
+      - "**.md"
+      - "LICENSE"
+      - ".gitignore"
+
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
     paths-ignore:
-      - 'scripts/**'
-      - '**.md'
-      - 'LICENSE'
-      - '.gitignore'
+      - "scripts/**"
+      - "**.md"
+      - "LICENSE"
+      - ".gitignore"
+
   merge_group:
     branches: [main]
 
+# ========================================
+# Environment Variables
+# ========================================
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
+# ========================================
+# Concurrency Control
+# ========================================
+# Cancel in-progress runs when a new commit is pushed
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# ========================================
+# Jobs
+# ========================================
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
     permissions:
       contents: read
 
     steps:
-      - uses: actions/checkout@v5
+      # --------------------------------------------------
+      # Setup
+      # --------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
@@ -49,17 +75,26 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Check formatting
+      # --------------------------------------------------
+      # Code Quality Checks
+      # --------------------------------------------------
+      - name: Check code formatting
         run: cargo fmt -- --check
 
-      - name: Run clippy
+      - name: Run clippy lints
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      # --------------------------------------------------
+      # Tests
+      # --------------------------------------------------
       - name: Run tests
         run: cargo test --verbose
 
-      - name: Build
+      # --------------------------------------------------
+      # Build Verification
+      # --------------------------------------------------
+      - name: Build debug binary
         run: cargo build --verbose
 
-      - name: Build release
+      - name: Build release binary
         run: cargo build --release --verbose

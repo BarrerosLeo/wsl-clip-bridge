@@ -1,7 +1,19 @@
+# ========================================
+# Release Workflow
+# ========================================
+# Automatically creates releases when code changes are pushed to main
+# Builds binaries for multiple architectures (x64 and ARM64)
+
 name: Release
 
+# ========================================
+# Triggers
+# ========================================
 on:
+  # Manual trigger from GitHub UI
   workflow_dispatch:
+
+  # Automatic trigger on code changes
   push:
     branches: [main]
     paths:
@@ -10,20 +22,35 @@ on:
       - "Cargo.lock"
       - ".github/workflows/release.yml"
 
+# ========================================
+# Environment Variables
+# ========================================
 env:
   CARGO_TERM_COLOR: always
 
+# ========================================
+# Concurrency Control
+# ========================================
+# Prevent concurrent releases
 concurrency:
   group: release
   cancel-in-progress: false
 
+# ========================================
+# Jobs
+# ========================================
 jobs:
+  # --------------------------------------------------
+  # Job 1: Validate Code Quality
+  # --------------------------------------------------
   validate:
     name: Validate Code
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -45,14 +72,19 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+  # --------------------------------------------------
+  # Job 2: Build Release Binaries
+  # --------------------------------------------------
   build:
     name: Build Release - ${{ matrix.target }}
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     outputs:
       sha_short: ${{ steps.commit.outputs.SHA_SHORT }}
       commit_message: ${{ steps.commit.outputs.MESSAGE }}
+
     strategy:
       matrix:
         include:
@@ -113,11 +145,15 @@ jobs:
             xclip-${{ matrix.arch }}
             xclip-${{ matrix.arch }}.sha256
 
+  # --------------------------------------------------
+  # Job 3: Create GitHub Release
+  # --------------------------------------------------
   release:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
     permissions:
       contents: write
 
