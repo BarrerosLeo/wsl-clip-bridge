@@ -40,7 +40,9 @@ jobs:
       id: commit
       run: |
         echo "SHA_SHORT=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-        echo "MESSAGE=$(git log -1 --pretty=%s)" >> "$GITHUB_OUTPUT"
+        # Escape commit message to prevent injection
+        MESSAGE=$(git log -1 --pretty=%s | sed 's/[\"$`\\]/\\&/g')
+        echo "MESSAGE=$MESSAGE" >> "$GITHUB_OUTPUT"
 
     - name: Build with cross
       uses: houseabsolute/actions-rust-cross@v1
