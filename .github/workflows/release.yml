@@ -86,14 +86,16 @@ jobs:
     
     - name: Create checksums
       run: |
+        # Copy binary with architecture suffix
+        cp target/${{ matrix.target }}/release/xclip xclip-${{ matrix.arch }}
         # Create checksum for tarball
         sha256sum wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz > wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256
         # Create checksum for binary
-        sha256sum target/${{ matrix.target }}/release/xclip > xclip-${{ matrix.arch }}.sha256
+        sha256sum xclip-${{ matrix.arch }} > xclip-${{ matrix.arch }}.sha256
         # Create combined checksums file
         cat wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256 > checksums-${{ matrix.arch }}.txt
-        echo "xclip-${{ matrix.arch }}  $(sha256sum target/${{ matrix.target }}/release/xclip | cut -d' ' -f1)" >> checksums-${{ matrix.arch }}.txt
-    
+        echo "xclip-${{ matrix.arch }}  $(sha256sum xclip-${{ matrix.arch }} | cut -d' ' -f1)" >> checksums-${{ matrix.arch }}.txt
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -102,7 +104,7 @@ jobs:
           wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz
           wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256
           checksums-${{ matrix.arch }}.txt
-          target/${{ matrix.target }}/release/xclip
+          xclip-${{ matrix.arch }}
           xclip-${{ matrix.arch }}.sha256
 
   release:
@@ -123,12 +125,6 @@ jobs:
         # Move all artifacts to release directory
         mv artifacts/release-amd64/* release/
         mv artifacts/release-arm64/* release/
-        # Rename binaries to include architecture
-        mv release/xclip release/xclip-amd64
-        cp artifacts/release-arm64/xclip release/xclip-arm64
-        # Move individual checksum files
-        mv release/xclip-amd64.sha256 release/
-        mv artifacts/release-arm64/xclip-arm64.sha256 release/
         # Combine checksums
         cat release/checksums-*.txt > release/checksums.txt
         rm release/checksums-*.txt
