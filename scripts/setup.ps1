@@ -125,6 +125,10 @@ $distributions = @(wsl --list --quiet 2>$null | Where-Object { $_ -match '\S' } 
     $_.Trim() -replace '\0', '' -replace '[^\x20-\x7E]', ''
 } | Where-Object { $_ })
 
+# Initialize variables for existing configuration
+$existingInstall = $false
+$existingConfig = $null
+
 if ($distributions.Count -eq 0) {
     Write-Err "No WSL distributions found."
     Write-Host "    Please install a Linux distribution first." -ForegroundColor Gray
@@ -212,30 +216,92 @@ if ($selectedDist -and -not (Test-DistributionName $selectedDist)) {
     exit 1
 }
 
-# Detect architecture
-Write-Section "System Architecture"
-Write-Step -Step "Detecting architecture" -Current 1 -Total 3
-$arch = "amd64"
-$osArch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
-if ($osArch -match "ARM") {
-    $arch = "arm64"
-    Write-Success "Windows: ARM64 architecture"
+# Check for existing installation in selected distribution
+Write-Info "Checking for existing installation..."
+$existingXclipPath = wsl -d $selectedDist -- bash -lc "which xclip 2>/dev/null" 2>$null
+if ($existingXclipPath) {
+    $existingXclipPath = $existingXclipPath.Trim()
+    if ($existingXclipPath) {
+        $existingInstall = $true
+        Write-Success "Existing xclip found at: $existingXclipPath"
+
+        # Check if it's our version by looking for config file
+        $configExists = wsl -d $selectedDist -- bash -c "test -f ~/.config/wsl-clip-bridge/config.toml && echo 'exists'" 2>$null
+        if ($configExists -eq 'exists') {
+            Write-Info "Reading existing configuration..."
+            $existingConfigContent = wsl -d $selectedDist -- bash -c "cat ~/.config/wsl-clip-bridge/config.toml 2>/dev/null"
+            if ($existingConfigContent) {
+                # Join array into single string for regex matching
+                $configString = $existingConfigContent -join "`n"
+                $existingConfig = @{}
+
+                # Parse TTL
+                if ($configString -match 'ttl_secs\s*=\s*(\d+)') {
+                    $existingConfig['ttl'] = $matches[1]
+                }
+
+                # Parse max_image_dimension
+                if ($configString -match 'max_image_dimension\s*=\s*(\d+)') {
+                    $existingConfig['maxDim'] = $matches[1]
+                }
+
+                # Parse allowed_directories
+                if ($configString -match 'allowed_directories\s*=\s*\[') {
+                    $existingConfig['hasAllowedDirs'] = $true
+                }
+
+                Write-Success "Found existing configuration"
+
+                # Display current configuration if we found values
+                if ($existingConfig['ttl'] -or $existingConfig['maxDim']) {
+                    Write-Host ""
+                    Write-Host "  Current Configuration:" -ForegroundColor Cyan
+                    Write-Host "    TTL: $($existingConfig['ttl']) seconds" -ForegroundColor Gray
+                    Write-Host "    Max Image: $(if ($existingConfig['maxDim'] -eq '0') { 'Disabled' } else { "$($existingConfig['maxDim']) pixels" })" -ForegroundColor Gray
+                    if ($existingConfig['hasAllowedDirs']) {
+                        Write-Host "    Allowed Dirs: Configured" -ForegroundColor Gray
+                    }
+                }
+            }
+        } else {
+            Write-Info "No configuration file found - will use defaults"
+        }
+    }
+}
+
+# Detect architecture (only needed for downloads)
+if ($existingInstall -and -not $AutoConfirm) {
+    # Skip detailed architecture detection if we're updating config only
+    $arch = "amd64"  # Default, won't be used for config updates
+    $wslArch = wsl -d $selectedDist -- uname -m 2>$null
+    if ($wslArch -eq "aarch64") {
+        $arch = "arm64"
+    }
 } else {
-    Write-Success "Windows: x64/AMD64 architecture"
-}
-
-Write-Step -Step "Checking WSL architecture" -Current 2 -Total 3
-$wslArch = wsl -d $selectedDist -- uname -m 2>$null
-if ($wslArch -eq "x86_64") {
+    Write-Section "System Architecture"
+    Write-Step -Step "Detecting architecture" -Current 1 -Total 3
     $arch = "amd64"
-    Write-Success "WSL: x64/AMD64 architecture"
-} elseif ($wslArch -eq "aarch64") {
-    $arch = "arm64"
-    Write-Success "WSL: ARM64 architecture"
-}
+    $osArch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
+    if ($osArch -match "ARM") {
+        $arch = "arm64"
+        Write-Success "Windows: ARM64 architecture"
+    } else {
+        Write-Success "Windows: x64/AMD64 architecture"
+    }
 
-Write-Step -Step "Architecture detection complete" -Current 3 -Total 3
-Write-Host "`n"
+    Write-Step -Step "Checking WSL architecture" -Current 2 -Total 3
+    $wslArch = wsl -d $selectedDist -- uname -m 2>$null
+    if ($wslArch -eq "x86_64") {
+        $arch = "amd64"
+        Write-Success "WSL: x64/AMD64 architecture"
+    } elseif ($wslArch -eq "aarch64") {
+        $arch = "arm64"
+        Write-Success "WSL: ARM64 architecture"
+    }
+
+    Write-Step -Step "Architecture detection complete" -Current 3 -Total 3
+    Write-Host "`n"
+}
 
 # GitHub repository setup - skip if using default
 $githubRepo = "camjac251/wsl-clip-bridge"
@@ -259,68 +325,119 @@ if (-not $AutoConfirm) {
     }
 }
 
-# Installation location
-Write-Section "Installation Location"
-Write-Host ""
-Write-Host "  Choose where to install xclip:" -ForegroundColor White
-Write-Host "  " -NoNewline
-Write-Host ("-" * 50) -ForegroundColor DarkGray
-Write-Host "   >" -ForegroundColor Green -NoNewline
-Write-Host " [1] " -ForegroundColor Yellow -NoNewline
-Write-Host "User directory " -ForegroundColor White -NoNewline
-Write-Host "(~/.local/bin)" -ForegroundColor Gray -NoNewline
-Write-Host " [Recommended]" -ForegroundColor Green
-Write-Host "        No sudo required, per-user installation" -ForegroundColor Gray
-Write-Host ""
-Write-Host "     [2] " -ForegroundColor Yellow -NoNewline
-Write-Host "System-wide " -ForegroundColor White -NoNewline
-Write-Host "(/usr/local/bin)" -ForegroundColor Gray
-Write-Host "        Requires sudo, available to all users" -ForegroundColor Gray
-Write-Host "  " -NoNewline
-Write-Host ("-" * 50) -ForegroundColor DarkGray
-Write-Host ""
+# Check if we're reinstalling or just updating
+if ($existingInstall) {
+    Write-Section "Existing Installation Detected"
+    Write-Host ""
+    Write-Host "  WSL Clip Bridge is already installed at:" -ForegroundColor White
+    Write-Host "  $existingXclipPath" -ForegroundColor Yellow
+    Write-Host ""
 
-if (-not $AutoConfirm) {
-    $installLocation = Read-Host "  Select location [1-2] (default: 1)"
-    if (-not $installLocation) { $installLocation = "1" }
-} else {
-    $installLocation = "1"
+    if (-not $AutoConfirm) {
+        Write-Host "  Options:" -ForegroundColor White
+        Write-Host "   > [1] " -ForegroundColor Green -NoNewline
+        Write-Host "Update configuration only " -ForegroundColor White -NoNewline
+        Write-Host "(keep existing binary)" -ForegroundColor Gray
+        Write-Host "     [2] " -ForegroundColor Yellow -NoNewline
+        Write-Host "Reinstall/upgrade binary " -ForegroundColor White -NoNewline
+        Write-Host "(download latest version)" -ForegroundColor Gray
+        Write-Host ""
+
+        $updateChoice = Read-Host "  Select option [1-2] (default: 1)"
+        if (-not $updateChoice) { $updateChoice = "1" }
+
+        if ($updateChoice -eq "1") {
+            # Skip to configuration section
+            $installMethod = "3"  # Skip installation
+            Write-Success "Updating configuration only"
+        } else {
+            Write-Info "Proceeding with reinstallation"
+        }
+    } else {
+        # In auto mode, just update config
+        $installMethod = "3"
+        Write-Success "Updating configuration only (auto mode)"
+    }
 }
 
-$installPath = '$HOME/.local/bin'
-$installDirCmd = 'mkdir -p $HOME/.local/bin'
-$installCopyCmd = "cp"
-$needsSudo = ""
+# Skip installation sections if we're only updating config
+if ($installMethod -ne "3") {
+    # Installation location
+    Write-Section "Installation Location"
+    Write-Host ""
+    Write-Host "  Choose where to install xclip:" -ForegroundColor White
+    Write-Host "  " -NoNewline
+    Write-Host ("-" * 50) -ForegroundColor DarkGray
+    Write-Host "   >" -ForegroundColor Green -NoNewline
+    Write-Host " [1] " -ForegroundColor Yellow -NoNewline
+    Write-Host "User directory " -ForegroundColor White -NoNewline
+    Write-Host "(~/.local/bin)" -ForegroundColor Gray -NoNewline
+    Write-Host " [Recommended]" -ForegroundColor Green
+    Write-Host "        No sudo required, per-user installation" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "     [2] " -ForegroundColor Yellow -NoNewline
+    Write-Host "System-wide " -ForegroundColor White -NoNewline
+    Write-Host "(/usr/local/bin)" -ForegroundColor Gray
+    Write-Host "        Requires sudo, available to all users" -ForegroundColor Gray
+    Write-Host "  " -NoNewline
+    Write-Host ("-" * 50) -ForegroundColor DarkGray
+    Write-Host ""
 
-if ($installLocation -eq "2") {
-    $installPath = "/usr/local/bin"
-    $installDirCmd = "sudo mkdir -p /usr/local/bin"
-    $installCopyCmd = "sudo cp"
-    $needsSudo = "sudo "
-    Write-Success "Installing system-wide (sudo required)"
+    if (-not $AutoConfirm) {
+        $installLocation = Read-Host "  Select location [1-2] (default: 1)"
+        if (-not $installLocation) { $installLocation = "1" }
+    } else {
+        $installLocation = "1"
+    }
+
+    $installPath = '$HOME/.local/bin'
+    $installDirCmd = 'mkdir -p $HOME/.local/bin'
+    $installCopyCmd = "cp"
+    $needsSudo = ""
+
+    if ($installLocation -eq "2") {
+        $installPath = "/usr/local/bin"
+        $installDirCmd = "sudo mkdir -p /usr/local/bin"
+        $installCopyCmd = "sudo cp"
+        $needsSudo = "sudo "
+        Write-Success "Installing system-wide (sudo required)"
+    } else {
+        Write-Success "Installing to user directory (no sudo required)"
+    }
 } else {
-    Write-Success "Installing to user directory (no sudo required)"
+    # For config-only updates, detect installation location from existing path
+    if ($existingXclipPath -match "/usr/local/bin") {
+        $installLocation = "2"
+        $installPath = "/usr/local/bin"
+        $needsSudo = "sudo "
+    } else {
+        $installLocation = "1"
+        $installPath = '$HOME/.local/bin'
+        $needsSudo = ""
+    }
 }
 
 # Installation method - default to download
-Write-Section "Installation Method"
+if ($installMethod -ne "3") {
+    Write-Section "Installation Method"
 
-# Auto-select download method unless explicitly building
-$installMethod = "1"
-if (-not $AutoConfirm) {
-    Write-Host ""
-    Write-Host "  Installation will download the latest release." -ForegroundColor White
-    Write-Host "  This is the fastest and recommended method." -ForegroundColor Gray
-    Write-Host ""
-    $customMethod = Read-Host "  Press Enter to continue, or type 'build' to compile from source"
-    if ($customMethod -match "build|source|compile") {
-        $installMethod = "2"
-        Write-Info "Switching to build from source method"
+    # Auto-select download method unless explicitly building
+    $installMethod = "1"
+    if (-not $AutoConfirm) {
+        Write-Host ""
+        Write-Host "  Installation will download the latest release." -ForegroundColor White
+        Write-Host "  This is the fastest and recommended method." -ForegroundColor Gray
+        Write-Host ""
+        $customMethod = Read-Host "  Press Enter to continue, or type 'build' to compile from source"
+        if ($customMethod -match "build|source|compile") {
+            $installMethod = "2"
+            Write-Info "Switching to build from source method"
+        } else {
+            Write-Success "Using quick download method"
+        }
     } else {
         Write-Success "Using quick download method"
     }
-} else {
-    Write-Success "Using quick download method"
 }
 
 switch ($installMethod) {
@@ -475,8 +592,13 @@ switch ($installMethod) {
     }
 
     "3" {
-        # Use existing build
-        Write-Info "Please ensure xclip is already installed in WSL."
+        # Configuration-only update
+        Write-Section "Configuration Update"
+        Write-Host ""
+        Write-Success "Skipping binary installation - updating configuration only"
+        Write-Host "  Binary location: " -NoNewline
+        Write-Host $existingXclipPath -ForegroundColor Yellow
+        Write-Host ""
     }
 
     default {
@@ -490,8 +612,8 @@ switch ($installMethod) {
 
 Write-Host ""
 
-# Configure PATH (only for user installation)
-if ($installLocation -eq "1") {
+# Configure PATH (only for user installation and new installs)
+if ($installMethod -ne "3" -and $installLocation -eq "1") {
     Write-Info "Checking PATH configuration..."
 
     wsl -d $selectedDist -- bash -c 'echo "$PATH" | grep -q "$HOME/.local/bin"' 2>&1 | Out-Null
@@ -519,7 +641,7 @@ if ($installLocation -eq "1") {
     } else {
         Write-Success "PATH already includes ~/.local/bin"
     }
-} else {
+} elseif ($installMethod -ne "3") {
     Write-Success "System-wide installation - PATH not required"
 }
 
@@ -540,28 +662,65 @@ Write-Host ""
 # Configure WSL Clip Bridge settings
 Write-Section "Configuration"
 
-# Use optimal defaults
-$ttl = "300"  # 5 minutes
-$maxDim = "1568"  # Optimal for Claude API
+# Use existing config values or optimal defaults
+if ($existingConfig -and $existingConfig['ttl']) {
+    $ttl = $existingConfig['ttl']
+} else {
+    $ttl = "300"  # 5 minutes default
+}
+
+if ($existingConfig -and $existingConfig['maxDim']) {
+    $maxDim = $existingConfig['maxDim']
+} else {
+    $maxDim = "1568"  # Optimal for Claude API default
+}
+
+# Show configuration summary if updating existing install
+if ($existingConfig) {
+    Write-Host ""
+    Write-Host "  Current Settings:" -ForegroundColor Cyan
+    Write-Host "    TTL: $ttl seconds" -ForegroundColor Gray
+    Write-Host "    Max Image: $(if ($maxDim -eq '0') { 'Disabled (original size)' } else { "$maxDim pixels" })" -ForegroundColor Gray
+    if ($existingConfig['hasAllowedDirs']) {
+        Write-Host "    Allowed Dirs: Already configured" -ForegroundColor Gray
+    }
+}
 
 if (-not $AutoConfirm) {
     Write-Host ""
-    Write-Host "  Configuration Options:" -ForegroundColor White
+    if ($existingConfig) {
+        Write-Host "  Customization Options:" -ForegroundColor White
+    } else {
+        Write-Host "  Configuration Options:" -ForegroundColor White
+    }
     Write-Host ""
-    Write-Host "    * Clipboard TTL (Time-to-Live):" -ForegroundColor Cyan
-    Write-Host "      How long clipboard data remains available" -ForegroundColor Gray
-    Write-Host "      Default: 5 minutes (good for most workflows)" -ForegroundColor Gray
+    Write-Host "    * Clipboard TTL:" -ForegroundColor Cyan
+    Write-Host "      Time before clipboard data expires (1-86400 seconds)" -ForegroundColor Gray
+    if (-not $existingConfig) {
+        Write-Host "      Default: 300 seconds (5 minutes)" -ForegroundColor Gray
+    }
     Write-Host ""
-    Write-Host "    * Image Optimization:" -ForegroundColor Cyan
-    Write-Host "      Automatically downscale large screenshots to save bandwidth" -ForegroundColor Gray
-    Write-Host "      Default: 1568px (optimal for Claude API)" -ForegroundColor Gray
-    Write-Host "      Set to 0 to disable downscaling" -ForegroundColor Gray
+    Write-Host "    * Image Downscaling:" -ForegroundColor Cyan
+    Write-Host "      Reduce large screenshots for faster uploads" -ForegroundColor Gray
+    Write-Host "      0 = Keep original size, 1568 = Optimal for Claude" -ForegroundColor Gray
+    if (-not $existingConfig) {
+        Write-Host "      Default: 1568 pixels" -ForegroundColor Gray
+    }
     Write-Host ""
-    Write-Host "    * Security - Directory Access:" -ForegroundColor Cyan
-    Write-Host "      Configured automatically based on your selections" -ForegroundColor Gray
-    Write-Host "      ShareX directories will be added if ShareX is detected" -ForegroundColor Gray
+    Write-Host "    * Directory Access:" -ForegroundColor Cyan
+    if ($existingConfig -and $existingConfig['hasAllowedDirs']) {
+        Write-Host "      Your existing paths will be preserved" -ForegroundColor Gray
+        Write-Host "      ShareX paths will be added if needed" -ForegroundColor Gray
+    } else {
+        Write-Host "      Automatically configured based on your usage" -ForegroundColor Gray
+        Write-Host "      ShareX directories added if detected" -ForegroundColor Gray
+    }
     Write-Host ""
-    $customize = Read-Host "  Press Enter to use defaults, or type 'custom' to modify"
+    if ($existingConfig) {
+        $customize = Read-Host "  Keep current settings? Press Enter for yes, or type 'custom' to modify"
+    } else {
+        $customize = Read-Host "  Press Enter to use defaults, or type 'custom' to modify"
+    }
 
     if ($customize -eq "custom") {
         Write-Host ""
@@ -572,20 +731,21 @@ if (-not $AutoConfirm) {
 
         # TTL
         Write-Host "  Clipboard TTL (1-86400 seconds):" -ForegroundColor White
-        Write-Host "    Shorter = Data expires quickly, files cleaned up sooner" -ForegroundColor Gray
-        Write-Host "    Longer  = Data stays available longer between copies" -ForegroundColor Gray
-        $customTtl = Read-Host "  Enter value in seconds [300]"
+        Write-Host "    Examples: 60 = 1 minute, 300 = 5 minutes, 3600 = 1 hour" -ForegroundColor Gray
+        Write-Host "    Current: $ttl seconds" -ForegroundColor Cyan
+        $customTtl = Read-Host "  Enter seconds [$ttl]"
         if ($customTtl -and $customTtl -match '^\d+$' -and [int]$customTtl -ge 1 -and [int]$customTtl -le 86400) {
             $ttl = $customTtl
         }
         Write-Host ""
 
         # Image size
-        Write-Host "  Maximum Image Dimension (0-10000 pixels):" -ForegroundColor White
-        Write-Host "    0    = No downscaling (keep original size)" -ForegroundColor Gray
-        Write-Host "    1568 = Optimal for Claude API (recommended)" -ForegroundColor Gray
-        Write-Host "    2048 = Good balance for quality vs size" -ForegroundColor Gray
-        $customDim = Read-Host "  Enter max dimension [1568]"
+        Write-Host "  Image Downscaling (0-10000 pixels):" -ForegroundColor White
+        Write-Host "    0    = Keep original size" -ForegroundColor Gray
+        Write-Host "    1568 = Optimal for Claude (recommended)" -ForegroundColor Gray
+        Write-Host "    2048 = Balanced quality" -ForegroundColor Gray
+        Write-Host "    Current: $(if ($maxDim -eq '0') { 'Disabled' } else { "$maxDim pixels" })" -ForegroundColor Cyan
+        $customDim = Read-Host "  Enter pixels [$maxDim]"
         if ($customDim -and $customDim -match '^\d+$' -and [int]$customDim -ge 0 -and [int]$customDim -le 10000) {
             $maxDim = $customDim
         }
@@ -604,8 +764,24 @@ if ($configureSettings -eq "y") {
         exit 1
     }
 
+
     # Store ShareX config flag for later
     $script:shareXConfigured = $false
+
+    # Check if we need to preserve existing allowed_directories
+    $preserveAllowedDirs = $false
+    $existingAllowedDirs = ""
+    if ($existingConfig -and $existingConfig['hasAllowedDirs']) {
+        # Use awk to extract the full allowed_directories array
+        $extractCmd = "awk '/^allowed_directories\s*=\s*\[/ {found=1} found {print} /^\]/ && found {exit}' ~/.config/wsl-clip-bridge/config.toml 2>/dev/null"
+        $existingAllowedDirsContent = wsl -d $selectedDist -- bash -c $extractCmd
+        if ($existingAllowedDirsContent) {
+            # Extract the allowed_directories section
+            $preserveAllowedDirs = $true
+            $existingAllowedDirs = "`n`n$existingAllowedDirsContent"
+            Write-Info "Preserving existing allowed_directories configuration"
+        }
+    }
 
     $configContent = @"
 # WSL Clip Bridge Configuration
@@ -617,10 +793,7 @@ ttl_secs = $ttl
 max_image_dimension = $maxDim
 
 # Security settings
-max_file_size_mb = 100
-
-# Directory access restrictions
-# ShareX directories will be added automatically if ShareX is configured
+max_file_size_mb = 100$existingAllowedDirs
 "@
 
     $tempConfigPath = Join-Path $env:TEMP "wsl-clip-config.toml"
@@ -649,11 +822,14 @@ max_file_size_mb = 100
 
     Write-Success "Configuration saved to ~/.config/wsl-clip-bridge/config.toml"
     Write-Host ""
-    Write-Host "  Settings applied:" -ForegroundColor Gray
-    Write-Host "    - Clipboard TTL: $ttl seconds" -ForegroundColor Gray
-    Write-Host "    - Max image size: $(if ($maxDim -eq '0') { 'Disabled (original size)' } else { "$maxDim pixels" })" -ForegroundColor Gray
-    Write-Host "    - Directory access: Will be configured based on ShareX integration" -ForegroundColor Gray
-    Write-Host "    - ShareX dirs: Will be added if ShareX is configured" -ForegroundColor DarkGray
+    Write-Host "  Applied Settings:" -ForegroundColor Gray
+    Write-Host "    - TTL: $ttl seconds $(if ($existingConfig -and $existingConfig['ttl'] -eq $ttl) { '(unchanged)' } else { '(updated)' })" -ForegroundColor Gray
+    Write-Host "    - Image: $(if ($maxDim -eq '0') { 'Original size' } else { "$maxDim pixels" }) $(if ($existingConfig -and $existingConfig['maxDim'] -eq $maxDim) { '(unchanged)' } else { '(updated)' })" -ForegroundColor Gray
+    if ($preserveAllowedDirs) {
+        Write-Host "    - Paths: Existing configuration preserved" -ForegroundColor Gray
+    } else {
+        Write-Host "    - Paths: Ready for ShareX integration" -ForegroundColor Gray
+    }
 }
 
 Write-Host ""
@@ -858,12 +1034,6 @@ if %ERRORLEVEL% NEQ 0 (
                     Write-Host ""
                     Write-Info "Preparing automatic configuration..."
 
-                    # Backup existing config
-                    Write-Info "Creating backup of ApplicationConfig.json..."
-                    $backupPath = "$configFile.backup.$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
-                    Copy-Item $configFile $backupPath -Force
-                    Write-Success "Backup created"
-
                     # Update ShareX configuration
                     Write-Info "Updating ShareX configuration..."
 
@@ -926,62 +1096,117 @@ if %ERRORLEVEL% NEQ 0 (
                         $configPath = "~/.config/wsl-clip-bridge/config.toml"
                         $currentConfig = wsl -d $selectedDist -- bash -c "cat $configPath 2>/dev/null"
 
-                        # Check if allowed_directories already exists
-                        if ($currentConfig -notmatch "allowed_directories") {
-                            # Build the allowed directories list
-                            $allowedDirs = @"
+                        # Check if ShareX paths are already in allowed_directories
+                        $needsShareXPaths = $false
+                        $shareXPathsToAdd = @()
+
+                        if ($wslShareXPath) {
+                            $shareXPathEscaped = [regex]::Escape($wslShareXPath)
+                            if ($currentConfig -notmatch $shareXPathEscaped) {
+                                $needsShareXPaths = $true
+                                $shareXPathsToAdd += $wslShareXPath
+                            }
+                        }
+
+                        if ($wslScreenshotsPath -and ($wslScreenshotsPath -ne $wslShareXPath)) {
+                            $screenshotsPathEscaped = [regex]::Escape($wslScreenshotsPath)
+                            if ($currentConfig -notmatch $screenshotsPathEscaped) {
+                                $needsShareXPaths = $true
+                                $shareXPathsToAdd += $wslScreenshotsPath
+                            }
+                        }
+
+                        if ($needsShareXPaths) {
+                            Write-Info "Adding ShareX paths to allowed_directories..."
+
+                            # Check if allowed_directories exists
+                            if ($currentConfig -match "allowed_directories") {
+                                # allowed_directories exists, we need to merge paths
+                                Write-Info "Merging ShareX paths with existing allowed_directories..."
+
+                                # Extract existing allowed_directories and rebuild
+                                # Use grep and sed to extract paths from allowed_directories
+                                $existingPaths = @()
+                                $grepCmd = 'grep -A 50 "^allowed_directories" ~/.config/wsl-clip-bridge/config.toml 2>/dev/null'
+                                $sedCmd = 'sed -n ''s/^[[:space:]]*"\([^"]*\)".*/\1/p'''
+                                $extractResult = wsl -d $selectedDist -- bash -c "$grepCmd | $sedCmd"
+                                if ($extractResult) {
+                                    $existingPaths = @($extractResult | Where-Object { $_ })
+                                }
+
+                                # Merge paths
+                                $allPaths = $existingPaths + $shareXPathsToAdd + @("/tmp")
+                                $homeDir = wsl -d $selectedDist -- bash -c "echo `$HOME" 2>$null
+                                if ($homeDir) {
+                                    $allPaths += $homeDir
+                                }
+
+                                # Remove duplicates
+                                $uniquePaths = $allPaths | Select-Object -Unique
+
+                                # Remove old allowed_directories and add new one
+                                wsl -d $selectedDist -- bash -c "sed -i '/^allowed_directories/,/^\]/d' $configPath"
+
+                                # Build new allowed_directories
+                                $newAllowedDirs = "`n# ShareX and other allowed directories`nallowed_directories = [`n"
+                                foreach ($path in $uniquePaths) {
+                                    if ($path) {
+                                        $newAllowedDirs += "  `"$path`",`n"
+                                    }
+                                }
+                                $newAllowedDirs = $newAllowedDirs.TrimEnd(",`n") + "`n]"
+
+                                # Append to config
+                                $tempConfigUpdate = Join-Path $env:TEMP "allowed_dirs_update.txt"
+                                $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                                $updateBytes = $utf8NoBom.GetBytes(($newAllowedDirs -replace "`r`n", "`n"))
+                                [System.IO.File]::WriteAllBytes($tempConfigUpdate, $updateBytes)
+
+                                $escapedUpdatePath = $tempConfigUpdate.Replace('\', '/')
+                                $wslUpdatePath = wsl -d $selectedDist -- wslpath -u "$escapedUpdatePath" 2>$null
+
+                                wsl -d $selectedDist -- bash -c "cat '$wslUpdatePath' >> $configPath"
+                                Remove-Item $tempConfigUpdate -Force -ErrorAction SilentlyContinue 2>$null
+
+                            } else {
+                                # No allowed_directories exists, create it
+                                $allowedDirs = @"
 
 # ShareX Integration - Allow access to ShareX directories
 allowed_directories = [
 "@
-
-                            if ($wslShareXPath) {
-                                $allowedDirs += "`n  `"$wslShareXPath`","
-                            }
-                            if ($wslScreenshotsPath -and ($wslScreenshotsPath -ne $wslShareXPath)) {
-                                $allowedDirs += "`n  `"$wslScreenshotsPath`","
-                            }
-                            # Add user's home directory
-                            $homeDir = wsl -d $selectedDist -- bash -c "echo `$HOME" 2>$null
-                            if ($homeDir) {
-                                $allowedDirs += "`n  `"$homeDir`","
-                            }
-                            $allowedDirs += @"
-
-  "/tmp"
-]
-"@
-
-                            # Append directories to config
-                            $tempConfigUpdate = Join-Path $env:TEMP "wsl-clip-config-update.txt"
-                            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-                            $updateBytes = $utf8NoBom.GetBytes(($allowedDirs -replace "`r`n", "`n"))
-                            [System.IO.File]::WriteAllBytes($tempConfigUpdate, $updateBytes)
-
-                            # Convert path and append to config
-                            $escapedUpdatePath = $tempConfigUpdate.Replace('\', '/')
-                            $wslUpdatePath = wsl -d $selectedDist -- wslpath -u "$escapedUpdatePath" 2>$null
-
-                            if ($wslUpdatePath) {
-                                wsl -d $selectedDist -- bash -c "cat '$wslUpdatePath' >> $configPath"
-                                if ($LASTEXITCODE -eq 0) {
-                                    Write-Success "Config updated to allow ShareX directories:"
-                                    if ($wslShareXPath) {
-                                        Write-Host "    - $wslShareXPath" -ForegroundColor Gray
-                                    }
-                                    if ($wslScreenshotsPath -and ($wslScreenshotsPath -ne $wslShareXPath)) {
-                                        Write-Host "    - $wslScreenshotsPath" -ForegroundColor Gray
-                                    }
-                                    Write-Host "    - /tmp" -ForegroundColor Gray
-                                    $script:shareXConfigured = $true
-                                } else {
-                                    Write-Warn "Could not update config for ShareX directories"
-                                    Write-Host "    You may need to manually add ShareX paths to allowed_directories" -ForegroundColor Gray
+                                foreach ($path in $shareXPathsToAdd) {
+                                    $allowedDirs += "`n  `"$path`","
                                 }
+
+                                # Add user's home directory
+                                $homeDir = wsl -d $selectedDist -- bash -c "echo `$HOME" 2>$null
+                                if ($homeDir) {
+                                    $allowedDirs += "`n  `"$homeDir`","
+                                }
+                                $allowedDirs += "`n  `"/tmp`"`n]"
+
+                                # Append directories to config
+                                $tempConfigUpdate = Join-Path $env:TEMP "wsl-clip-config-update.txt"
+                                $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                                $updateBytes = $utf8NoBom.GetBytes(($allowedDirs -replace "`r`n", "`n"))
+                                [System.IO.File]::WriteAllBytes($tempConfigUpdate, $updateBytes)
+
+                                # Convert path and append to config
+                                $escapedUpdatePath = $tempConfigUpdate.Replace('\', '/')
+                                $wslUpdatePath = wsl -d $selectedDist -- wslpath -u "$escapedUpdatePath" 2>$null
+
+                                wsl -d $selectedDist -- bash -c "cat '$wslUpdatePath' >> $configPath"
+                                Remove-Item $tempConfigUpdate -Force -ErrorAction SilentlyContinue 2>$null
                             }
-                            Remove-Item $tempConfigUpdate -Force -ErrorAction SilentlyContinue 2>$null
+
+                            Write-Success "ShareX directories added to allowed_directories:"
+                            foreach ($path in $shareXPathsToAdd) {
+                                Write-Host "    - $path" -ForegroundColor Gray
+                            }
+                            $script:shareXConfigured = $true
                         } else {
-                            Write-Info "Config already has allowed_directories configured"
+                            Write-Info "ShareX directories already configured in allowed_directories"
                             $script:shareXConfigured = $true
                         }
 
@@ -1094,11 +1319,19 @@ Write-Host ""
 # Summary
 Write-Host "`n"
 Write-Host ("=" * 64) -ForegroundColor Green
-Write-Host "              Installation Complete!" -ForegroundColor Green
+if ($installMethod -eq "3") {
+    Write-Host "              Configuration Updated!" -ForegroundColor Green
+} else {
+    Write-Host "              Installation Complete!" -ForegroundColor Green
+}
 Write-Host ("=" * 64) -ForegroundColor Green
 
 Write-Host ""
-Write-Host "  Installation Details:" -ForegroundColor Cyan
+if ($installMethod -eq "3") {
+    Write-Host "  Update Details:" -ForegroundColor Cyan
+} else {
+    Write-Host "  Installation Details:" -ForegroundColor Cyan
+}
 Write-Host "  " -NoNewline
 Write-Host ("-" * 20) -ForegroundColor DarkGray
 Write-Host "  Distribution: " -NoNewline
@@ -1116,6 +1349,11 @@ if ($installLocation -eq "1") {
 
 Write-Host "  Config Path:  " -NoNewline
 Write-Host "~/.config/wsl-clip-bridge/config.toml" -ForegroundColor Yellow
+
+if ($installMethod -eq "3") {
+    Write-Host "  Status:       " -NoNewline
+    Write-Host "Configuration updated" -ForegroundColor Green
+}
 
 if ($configureShareX -eq "y" -and $scriptPath) {
     Write-Host ""
