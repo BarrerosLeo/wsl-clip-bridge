@@ -18,8 +18,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate Code
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --verbose
+
   build:
     name: Build Release - ${{ matrix.target }}
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
