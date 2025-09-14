@@ -274,8 +274,14 @@ switch ($installMethod) {
                 Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumPath -UseBasicParsing -ErrorAction SilentlyContinue
                 
                 if (Test-Path $checksumPath) {
-                    $expectedChecksum = (Get-Content $checksumPath -Raw).Trim().Split(' ')[0]
-                    $actualChecksum = (Get-FileHash $downloadPath -Algorithm SHA256).Hash
+                    # Parse checksum file (format: "filename  hash" or just "hash")
+                    $checksumContent = (Get-Content $checksumPath -Raw).Trim()
+                    if ($checksumContent -match '^([a-fA-F0-9]{64})') {
+                        $expectedChecksum = $matches[1].ToUpper()
+                    } else {
+                        $expectedChecksum = $checksumContent.Split(' ')[-1].ToUpper()
+                    }
+                    $actualChecksum = (Get-FileHash $downloadPath -Algorithm SHA256).Hash.ToUpper()
                     
                     if ($expectedChecksum -eq $actualChecksum) {
                         Write-Success "Checksum verified successfully"
@@ -406,15 +412,15 @@ if ($installLocation -eq "1") {
         $bashrcExists = wsl -d $selectedDist -- test -f ~/.bashrc
         if ($LASTEXITCODE -eq 0) {
             Write-Info "Adding to ~/.bashrc..."
-            $pathCommand = 'grep -q "export PATH=.*HOME/.local/bin" ~/.bashrc || echo ''export PATH="$HOME/.local/bin:$PATH"'' >> ~/.bashrc'
+            $pathCommand = 'grep -q "/.local/bin" ~/.bashrc || echo ''export PATH="$HOME/.local/bin:$PATH"'' >> ~/.bashrc'
             wsl -d $selectedDist -- bash -c $pathCommand
             Write-Success "PATH updated in ~/.bashrc"
         }
-        
+
         $profileExists = wsl -d $selectedDist -- test -f ~/.profile
         if ($LASTEXITCODE -eq 0) {
             Write-Info "Adding to ~/.profile..."
-            $pathCommand = 'grep -q "export PATH=.*HOME/.local/bin" ~/.profile || echo ''export PATH="$HOME/.local/bin:$PATH"'' >> ~/.profile'
+            $pathCommand = 'grep -q "/.local/bin" ~/.profile || echo ''export PATH="$HOME/.local/bin:$PATH"'' >> ~/.profile'
             wsl -d $selectedDist -- bash -c $pathCommand
             Write-Success "PATH updated in ~/.profile"
         }
@@ -526,7 +532,8 @@ restrict_to_home = $(if ($restrictHome -eq 'y') { 'true' } else { 'false' })
 "@
     
     $tempConfigPath = Join-Path $env:TEMP "wsl-clip-config.toml"
-    $configContent | Out-File -FilePath $tempConfigPath -Encoding UTF8 -NoNewline
+    # Use Unix line endings for config file
+    $configContent -replace "`r`n", "`n" | Out-File -FilePath $tempConfigPath -Encoding UTF8 -NoNewline
     
     # Copy config to WSL
     $wslConfigPath = wsl -d $selectedDist -- wslpath -u "$tempConfigPath"
@@ -650,8 +657,9 @@ if "%~1"=="" (
     exit /b 1
 )
 
-rem Call WSL to run xclip with the converted path
-wsl -d $safeDistName bash -lc "xclip -selection clipboard -t image/png -i \"`$(wslpath -u '%~1')\""
+rem Convert Windows path to WSL path and copy to clipboard
+for /f "usebackq tokens=*" %%i in (`wsl -d $safeDistName wslpath -u "%~1"`) do set WSLPATH=%%i
+wsl -d $safeDistName bash -lc "xclip -selection clipboard -t image/png -i \"%WSLPATH%\""
 
 if %ERRORLEVEL% NEQ 0 (
     echo Error: Failed to copy image to WSL clipboard
