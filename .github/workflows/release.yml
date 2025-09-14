@@ -17,6 +17,9 @@ jobs:
     name: Build Release - ${{ matrix.target }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      sha_short: ${{ steps.commit.outputs.SHA_SHORT }}
+      commit_message: ${{ steps.commit.outputs.MESSAGE }}
     strategy:
       matrix:
         include:
@@ -28,6 +31,12 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
+
+    - name: Get commit info
+      id: commit
+      run: |
+        echo "SHA_SHORT=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        echo "MESSAGE=$(git log -1 --pretty=%s)" >> "$GITHUB_OUTPUT"
 
     - name: Build with cross
       uses: houseabsolute/actions-rust-cross@v1
@@ -82,7 +91,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: artifacts
-    
+
     - name: Prepare release files
       run: |
         mkdir -p release
@@ -92,16 +101,10 @@ jobs:
         # Combine checksums
         cat release/checksums-*.txt > release/checksums.txt
         rm release/checksums-*.txt
-    
+
     - name: Generate Release Tag
       id: tag
       run: echo "TAG=v$(date +'%Y.%m.%d-%H%M%S')" >> "$GITHUB_OUTPUT"
-
-    - name: Get commit info
-      id: commit
-      run: |
-        echo "SHA_SHORT=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-        echo "MESSAGE=$(git log -1 --pretty=%s)" >> "$GITHUB_OUTPUT"
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
@@ -111,7 +114,7 @@ jobs:
         body: |
           Drop-in xclip replacement for WSL → Perfect for [Claude Code](https://claude.ai/code) screenshot pasting!
 
-          **Latest commit**: `${{ steps.commit.outputs.SHA_SHORT }}` - ${{ steps.commit.outputs.MESSAGE }}
+          **Latest commit**: `${{ needs.build.outputs.sha_short }}` - ${{ needs.build.outputs.commit_message }}
 
           ## Downloads
 
