@@ -3,11 +3,11 @@ name: Release
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - 'src/**'
-      - 'Cargo.toml'
-      - '.github/workflows/release.yml'
+      - "src/**"
+      - "Cargo.toml"
+      - ".github/workflows/release.yml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,56 +33,56 @@ jobs:
             arch: arm64
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v5
+      - name: Checkout code
+        uses: actions/checkout@v5
 
-    - name: Get commit info
-      id: commit
-      run: |
-        echo "SHA_SHORT=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-        # Escape commit message to prevent injection
-        MESSAGE=$(git log -1 --pretty=%s | sed 's/[\"$`\\]/\\&/g')
-        echo "MESSAGE=$MESSAGE" >> "$GITHUB_OUTPUT"
+      - name: Get commit info
+        id: commit
+        run: |
+          echo "SHA_SHORT=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          # Escape commit message to prevent injection
+          MESSAGE=$(git log -1 --pretty=%s | sed 's/[\"$`\\]/\\&/g')
+          echo "MESSAGE=$MESSAGE" >> "$GITHUB_OUTPUT"
 
-    - name: Build with cross
-      uses: houseabsolute/actions-rust-cross@v1
-      with:
-        command: build
-        target: ${{ matrix.target }}
-        args: "--locked --release"
-        strip: true
-    
-    - name: Create tarball and checksums
-      run: |
-        # Create package directory
-        mkdir -p wsl-clip-bridge
-        cp target/${{ matrix.target }}/release/xclip wsl-clip-bridge/
-        cp -r scripts wsl-clip-bridge/
-        cp -r config wsl-clip-bridge/
-        cp README.md wsl-clip-bridge/
-        tar czf wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz wsl-clip-bridge
+      - name: Build with cross
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          args: "--locked --release"
+          strip: true
 
-        # Copy binary with architecture suffix
-        cp target/${{ matrix.target }}/release/xclip xclip-${{ matrix.arch }}
+      - name: Create tarball and checksums
+        run: |
+          # Create package directory
+          mkdir -p wsl-clip-bridge
+          cp target/${{ matrix.target }}/release/xclip wsl-clip-bridge/
+          cp -r scripts wsl-clip-bridge/
+          cp -r config wsl-clip-bridge/
+          cp README.md wsl-clip-bridge/
+          tar czf wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz wsl-clip-bridge
 
-        # Create checksums
-        sha256sum wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz > wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256
-        sha256sum xclip-${{ matrix.arch }} > xclip-${{ matrix.arch }}.sha256
+          # Copy binary with architecture suffix
+          cp target/${{ matrix.target }}/release/xclip xclip-${{ matrix.arch }}
 
-        # Create combined checksums file
-        cat wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256 > checksums-${{ matrix.arch }}.txt
-        echo "xclip-${{ matrix.arch }}  $(sha256sum xclip-${{ matrix.arch }} | cut -d' ' -f1)" >> checksums-${{ matrix.arch }}.txt
+          # Create checksums
+          sha256sum wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz > wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256
+          sha256sum xclip-${{ matrix.arch }} > xclip-${{ matrix.arch }}.sha256
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: release-${{ matrix.arch }}
-        path: |
-          wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz
-          wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256
-          checksums-${{ matrix.arch }}.txt
-          xclip-${{ matrix.arch }}
-          xclip-${{ matrix.arch }}.sha256
+          # Create combined checksums file
+          cat wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256 > checksums-${{ matrix.arch }}.txt
+          echo "xclip-${{ matrix.arch }}  $(sha256sum xclip-${{ matrix.arch }} | cut -d' ' -f1)" >> checksums-${{ matrix.arch }}.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.arch }}
+          path: |
+            wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz
+            wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256
+            checksums-${{ matrix.arch }}.txt
+            xclip-${{ matrix.arch }}
+            xclip-${{ matrix.arch }}.sha256
 
   release:
     name: Create Release
@@ -93,81 +93,81 @@ jobs:
       contents: write
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v5
-      with:
-        fetch-depth: 0  # Need full history for changelog
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Need full history for changelog
 
-    - name: Download all artifacts
-      uses: actions/download-artifact@v5
-      with:
-        path: artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
 
-    - name: Prepare release files
-      run: |
-        mkdir -p release
-        # Move all artifacts to release directory
-        mv artifacts/release-amd64/* release/
-        mv artifacts/release-arm64/* release/
-        # Combine checksums
-        cat release/checksums-*.txt > release/checksums.txt
-        rm release/checksums-*.txt
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          # Move all artifacts to release directory
+          mv artifacts/release-amd64/* release/
+          mv artifacts/release-arm64/* release/
+          # Combine checksums
+          cat release/checksums-*.txt > release/checksums.txt
+          rm release/checksums-*.txt
 
-    - name: Generate Release Tag
-      id: tag
-      run: echo "TAG=v$(date +'%Y.%m.%d').${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+      - name: Generate Release Tag
+        id: tag
+        run: echo "TAG=v$(date +'%Y.%m.%d').${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
-    - name: Generate Changelog
-      id: changelog
-      run: |
-        # Get the last release tag
-        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          # Get the last release tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
-        if [ -z "$LAST_TAG" ]; then
-          echo "CHANGES=Initial release" >> "$GITHUB_OUTPUT"
-        else
-          # Generate changelog from commits since last tag
-          CHANGES=$(git log $LAST_TAG..HEAD --pretty=format:"- %s" --no-merges | head -20)
+          if [ -z "$LAST_TAG" ]; then
+            echo "CHANGES=Initial release" >> "$GITHUB_OUTPUT"
+          else
+            # Generate changelog from commits since last tag
+            CHANGES=$(git log $LAST_TAG..HEAD --pretty=format:"- %s" --no-merges | head -20)
 
-          # If no changes, set a default message
-          if [ -z "$CHANGES" ]; then
-            CHANGES="- No significant changes"
+            # If no changes, set a default message
+            if [ -z "$CHANGES" ]; then
+              CHANGES="- No significant changes"
+            fi
+
+            # Escape for GitHub output
+            echo "CHANGES<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$CHANGES" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
           fi
 
-          # Escape for GitHub output
-          echo "CHANGES<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$CHANGES" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-        fi
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.TAG }}
+          name: Release ${{ steps.tag.outputs.TAG }}
+          body: |
+            Drop-in xclip replacement for WSL → Perfect for [Claude Code](https://claude.ai/code) screenshot pasting!
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.tag.outputs.TAG }}
-        name: Release ${{ steps.tag.outputs.TAG }}
-        body: |
-          Drop-in xclip replacement for WSL → Perfect for [Claude Code](https://claude.ai/code) screenshot pasting!
+            ## What's Changed
+            ${{ steps.changelog.outputs.CHANGES }}
 
-          ## What's Changed
-          ${{ steps.changelog.outputs.CHANGES }}
+            ## Downloads
 
-          ## Downloads
+            | Architecture | Full Package | Binary Only |
+            |--------------|--------------|-------------|
+            | **x64/AMD64** (most users) | [wsl-clip-bridge-linux-amd64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/wsl-clip-bridge-linux-amd64.tar.gz) | [xclip-amd64](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/xclip-amd64) |
+            | **ARM64** | [wsl-clip-bridge-linux-arm64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/wsl-clip-bridge-linux-arm64.tar.gz) | [xclip-arm64](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/xclip-arm64) |
 
-          | Architecture | Full Package | Binary Only |
-          |--------------|--------------|-------------|
-          | **x64/AMD64** (most users) | [wsl-clip-bridge-linux-amd64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/wsl-clip-bridge-linux-amd64.tar.gz) | [xclip-amd64](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/xclip-amd64) |
-          | **ARM64** | [wsl-clip-bridge-linux-arm64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/wsl-clip-bridge-linux-arm64.tar.gz) | [xclip-arm64](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/xclip-arm64) |
-
-          📦 **[Installation Instructions](https://github.com/${{ github.repository }}#-quick-start)** • 📖 **[Full Documentation](https://github.com/${{ github.repository }}#readme)** • ✅ **[Verify with checksums.txt](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/checksums.txt)**
-        files: |
-          release/wsl-clip-bridge-linux-amd64.tar.gz
-          release/wsl-clip-bridge-linux-amd64.tar.gz.sha256
-          release/wsl-clip-bridge-linux-arm64.tar.gz
-          release/wsl-clip-bridge-linux-arm64.tar.gz.sha256
-          release/xclip-amd64
-          release/xclip-amd64.sha256
-          release/xclip-arm64
-          release/xclip-arm64.sha256
-          release/checksums.txt
-        draft: false
-        prerelease: false
+            📦 **[Installation Instructions](https://github.com/${{ github.repository }}#-quick-start)** • 📖 **[Full Documentation](https://github.com/${{ github.repository }}#readme)** • ✅ **[Verify with checksums.txt](https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/checksums.txt)**
+          files: |
+            release/wsl-clip-bridge-linux-amd64.tar.gz
+            release/wsl-clip-bridge-linux-amd64.tar.gz.sha256
+            release/wsl-clip-bridge-linux-arm64.tar.gz
+            release/wsl-clip-bridge-linux-arm64.tar.gz.sha256
+            release/xclip-amd64
+            release/xclip-amd64.sha256
+            release/xclip-arm64
+            release/xclip-arm64.sha256
+            release/checksums.txt
+          draft: false
+          prerelease: false
