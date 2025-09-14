@@ -213,8 +213,8 @@ if (-not $AutoConfirm) {
     $installLocation = "1"
 }
 
-$installPath = "~/.local/bin"
-$installDirCmd = "mkdir -p ~/.local/bin"
+$installPath = '$HOME/.local/bin'
+$installDirCmd = 'mkdir -p $HOME/.local/bin'
 $installCopyCmd = "cp"
 $needsSudo = ""
 
@@ -315,37 +315,43 @@ switch ($installMethod) {
         
         Write-Host ""
         Write-Info "Installing to WSL distribution: $selectedDist..."
-        
+
         # Convert Windows path to WSL path and copy
-        $wslTempPath = wsl -d $selectedDist -- wslpath -u "$downloadPath"
+        # Replace backslashes with forward slashes for WSL compatibility
+        $escapedPath = $downloadPath.Replace('\', '/')
+        $wslTempPath = wsl -d $selectedDist -- wslpath -u "$escapedPath"
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to convert Windows path to WSL path"
             Remove-Item $tempDir -Recurse -Force 2>$null
             exit 1
         }
         
-        wsl -d $selectedDist -- $installDirCmd
+        wsl -d $selectedDist -- bash -c "$installDirCmd"
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to create installation directory"
             Remove-Item $tempDir -Recurse -Force 2>$null
             exit 1
         }
-        
-        wsl -d $selectedDist -- $installCopyCmd "$wslTempPath" "$installPath/xclip"
+
+        wsl -d $selectedDist -- bash -c "$installCopyCmd '$wslTempPath' '$installPath/xclip'"
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to copy binary to installation directory"
             Remove-Item $tempDir -Recurse -Force 2>$null
             exit 1
         }
-        
-        wsl -d $selectedDist -- ${needsSudo}chmod +x "$installPath/xclip"
+
+        wsl -d $selectedDist -- bash -c "${needsSudo}chmod +x '$installPath/xclip'"
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to set executable permissions"
             Remove-Item $tempDir -Recurse -Force 2>$null
             exit 1
         }
         
-        Write-Success "Binary installed to $installPath/xclip"
+        if ($installLocation -eq "1") {
+            Write-Success "Binary installed to ~/.local/bin/xclip"
+        } else {
+            Write-Success "Binary installed to /usr/local/bin/xclip"
+        }
         
         # Cleanup
         Remove-Item $tempDir -Recurse -Force 2>$null
@@ -365,10 +371,10 @@ switch ($installMethod) {
         }
         
         Write-Info "Cloning repository..."
-        wsl -d $selectedDist -- git clone "https://github.com/$githubRepo" ~/wsl-clip-bridge 2>$null
-        
+        wsl -d $selectedDist -- bash -c "git clone 'https://github.com/$githubRepo' \$HOME/wsl-clip-bridge 2>/dev/null"
+
         Write-Info "Building from source..."
-        wsl -d $selectedDist -- bash -c "cd ~/wsl-clip-bridge && cargo build --release"
+        wsl -d $selectedDist -- bash -c "cd \$HOME/wsl-clip-bridge && cargo build --release"
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Build failed. Check error messages above."
             exit 1
@@ -376,9 +382,9 @@ switch ($installMethod) {
         
         Write-Info "Installing binary..."
         if ($installLocation -eq "1") {
-            wsl -d $selectedDist -- bash -c "mkdir -p ~/.local/bin && cp ~/wsl-clip-bridge/target/release/xclip ~/.local/bin/"
+            wsl -d $selectedDist -- bash -c "mkdir -p \$HOME/.local/bin && cp \$HOME/wsl-clip-bridge/target/release/xclip \$HOME/.local/bin/"
         } else {
-            wsl -d $selectedDist -- bash -c "sudo cp ~/wsl-clip-bridge/target/release/xclip /usr/local/bin/"
+            wsl -d $selectedDist -- bash -c "sudo cp \$HOME/wsl-clip-bridge/target/release/xclip /usr/local/bin/"
         }
         
         Write-Success "Build and installation complete"
@@ -404,23 +410,23 @@ Write-Host ""
 if ($installLocation -eq "1") {
     Write-Info "Checking PATH configuration..."
     
-    $pathCheck = wsl -d $selectedDist -- bash -c 'echo $PATH | grep -q ~/.local/bin'
+    $pathCheck = wsl -d $selectedDist -- bash -c 'echo "$PATH" | grep -q "$HOME/.local/bin"'
     if ($LASTEXITCODE -ne 0) {
         Write-Info "~/.local/bin not found in PATH"
         
         # Check which shell config files exist
-        $bashrcExists = wsl -d $selectedDist -- test -f ~/.bashrc
+        $bashrcExists = wsl -d $selectedDist -- bash -c 'test -f $HOME/.bashrc'
         if ($LASTEXITCODE -eq 0) {
             Write-Info "Adding to ~/.bashrc..."
-            $pathCommand = 'grep -q "/.local/bin" ~/.bashrc || echo ''export PATH="$HOME/.local/bin:$PATH"'' >> ~/.bashrc'
+            $pathCommand = "grep -q '/.local/bin' `$HOME/.bashrc || echo 'export PATH=`"`$HOME/.local/bin:`$PATH`"' >> `$HOME/.bashrc"
             wsl -d $selectedDist -- bash -c $pathCommand
             Write-Success "PATH updated in ~/.bashrc"
         }
 
-        $profileExists = wsl -d $selectedDist -- test -f ~/.profile
+        $profileExists = wsl -d $selectedDist -- bash -c 'test -f $HOME/.profile'
         if ($LASTEXITCODE -eq 0) {
             Write-Info "Adding to ~/.profile..."
-            $pathCommand = 'grep -q "/.local/bin" ~/.profile || echo ''export PATH="$HOME/.local/bin:$PATH"'' >> ~/.profile'
+            $pathCommand = "grep -q '/.local/bin' `$HOME/.profile || echo 'export PATH=`"`$HOME/.local/bin:`$PATH`"' >> `$HOME/.profile"
             wsl -d $selectedDist -- bash -c $pathCommand
             Write-Success "PATH updated in ~/.profile"
         }
@@ -437,11 +443,12 @@ Write-Host ""
 
 # Test installation
 Write-Info "Testing installation..."
-$testResult = wsl -d $selectedDist -- bash -lc "xclip -version" 2>&1
+# Just check if xclip is found in PATH and is executable
+$testResult = wsl -d $selectedDist -- bash -lc "which xclip" 2>&1
 if ($LASTEXITCODE -eq 0) {
-    Write-Success "xclip is working"
+    Write-Success "xclip installed at: $($testResult.Trim())"
 } else {
-    Write-Warning "xclip test failed. You may need to restart your WSL session."
+    Write-Warning "xclip not found in PATH. You may need to restart your WSL session."
 }
 
 Write-Host ""
@@ -510,8 +517,8 @@ if ($configureSettings -eq "y") {
     # Create config file
     Write-Host ""
     Write-Info "Creating configuration file..."
-    
-    wsl -d $selectedDist -- mkdir -p ~/.config/wsl-clip-bridge
+
+    wsl -d $selectedDist -- bash -c 'mkdir -p $HOME/.config/wsl-clip-bridge'
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to create config directory"
         exit 1
@@ -536,14 +543,16 @@ restrict_to_home = $(if ($restrictHome -eq 'y') { 'true' } else { 'false' })
     $configContent -replace "`r`n", "`n" | Out-File -FilePath $tempConfigPath -Encoding UTF8 -NoNewline
     
     # Copy config to WSL
-    $wslConfigPath = wsl -d $selectedDist -- wslpath -u "$tempConfigPath"
+    # Replace backslashes with forward slashes for WSL compatibility
+    $escapedConfigPath = $tempConfigPath.Replace('\', '/')
+    $wslConfigPath = wsl -d $selectedDist -- wslpath -u "$escapedConfigPath"
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to convert config path"
         Remove-Item $tempConfigPath -Force 2>$null
         exit 1
     }
     
-    wsl -d $selectedDist -- cp "$wslConfigPath" ~/.config/wsl-clip-bridge/config.toml
+    wsl -d $selectedDist -- bash -c "cp '$wslConfigPath' ~/.config/wsl-clip-bridge/config.toml"
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to copy config file"
         Remove-Item $tempConfigPath -Force 2>$null
@@ -658,8 +667,8 @@ if "%~1"=="" (
 )
 
 rem Convert Windows path to WSL path and copy to clipboard
-for /f "usebackq tokens=*" %%i in (`wsl -d $safeDistName wslpath -u "%~1"`) do set WSLPATH=%%i
-wsl -d $safeDistName bash -lc "xclip -selection clipboard -t image/png -i \"%WSLPATH%\""
+for /f "usebackq tokens=*" %%i in (``wsl -d $safeDistName wslpath -u "%~1"``) do set WSLPATH=%%i
+wsl -d $safeDistName bash -lc "xclip -selection clipboard -t image/png -i '%WSLPATH%'"
 
 if %ERRORLEVEL% NEQ 0 (
     echo Error: Failed to copy image to WSL clipboard
@@ -818,7 +827,9 @@ if ($testInstall -eq "y") {
     "Test content from Windows" | Out-File -FilePath $testFile -Encoding UTF8 -NoNewline
     
     Write-Info "Copying to WSL clipboard..."
-    $wslTestPath = wsl -d $selectedDist -- wslpath -u "$testFile"
+    # Replace backslashes with forward slashes for WSL compatibility
+    $escapedTestPath = $testFile.Replace('\', '/')
+    $wslTestPath = wsl -d $selectedDist -- wslpath -u "$escapedTestPath"
     wsl -d $selectedDist -- bash -lc "cat '$wslTestPath' | xclip -selection clipboard -i"
     
     Write-Info "Reading from WSL clipboard..."
@@ -841,7 +852,11 @@ Write-Host " Summary:" -ForegroundColor White
 Write-Host " --------" -ForegroundColor Gray
 Write-Host "   WSL Distribution: $selectedDist"
 Write-Host "   Architecture: $arch"
-Write-Host "   Binary Location: $installPath/xclip"
+if ($installLocation -eq "1") {
+    Write-Host "   Binary Location: ~/.local/bin/xclip"
+} else {
+    Write-Host "   Binary Location: /usr/local/bin/xclip"
+}
 Write-Host "   Config Location: ~/.config/wsl-clip-bridge/config.toml"
 Write-Host ""
 
