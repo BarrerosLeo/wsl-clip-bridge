@@ -91,7 +91,7 @@ sudo install -m 755 target/release/xclip /usr/local/bin/
 
 ### Claude Code Workflow
 
-1. **Take screenshot** with ShareX (or Windows Snipping Tool)
+1. **Take screenshot** with ShareX
 2. **In Claude Code terminal**: Press `Ctrl+V` to paste directly
 
 That's it! No commands needed for the primary use case.
@@ -108,19 +108,59 @@ That's it! No commands needed for the primary use case.
 ### ShareX Integration
 
 > [!NOTE]
-> The installer configures this automatically. Manual setup only needed for custom workflows.
+> The installer configures this automatically. Manual setup instructions below if needed.
 
 <details>
 <summary><b>Manual ShareX Setup</b></summary>
 
+#### Step 1: Create the Batch File
+
+Create `%USERPROFILE%\Documents\ShareX\Tools\copy-to-wsl-clipboard.bat`:
+
+```batch
+@echo off
+rem WSL Clip Bridge - ShareX Integration
+rem Replace "Ubuntu" with your WSL distro name (run 'wsl -l' to see available distros)
+
+if "%~1"=="" (
+    echo Error: No file path provided
+    exit /b 1
+)
+
+rem Convert Windows path to WSL path and copy to clipboard
+for /f "usebackq tokens=*" %%i in (`wsl -d Ubuntu wslpath -u "%~1"`) do set WSLPATH=%%i
+wsl -d Ubuntu bash -lc "xclip -selection clipboard -t image/png -i '%WSLPATH%'"
+
+if %ERRORLEVEL% NEQ 0 (
+    echo Error: Failed to copy image to WSL clipboard
+    exit /b %ERRORLEVEL%
+)
+```
+
+**Important**: Replace `Ubuntu` with your WSL distribution name. Check with: `wsl -l`
+
+#### Step 2: Configure ShareX
+
 1. **ShareX** → **Task Settings** → **Actions** → **Add**:
    - Name: `Copy to WSL Clipboard`
-   - File: `%USERPROFILE%\Documents\ShareX\Tools\copy-to-wsl-clipboard.bat`
+   - File path: `%USERPROFILE%\Documents\ShareX\Tools\copy-to-wsl-clipboard.bat`
    - Arguments: `%input`
+   - Hidden window: ✅ (recommended)
 
-2. **After capture tasks**:
+2. **After capture tasks** → **Add**:
    - ✅ Save image to file
-   - ✅ Perform actions → "Copy to WSL Clipboard"
+   - ✅ Perform actions → Select "Copy to WSL Clipboard"
+
+3. **Hotkey settings** (optional):
+   - Set up `Ctrl+Shift+S` or your preferred shortcut
+   - Action: Capture region
+
+#### Step 3: Test It
+
+1. Take a screenshot with ShareX
+2. Open WSL terminal
+3. Run: `xclip -t TARGETS -o` (should show `image/png`)
+4. In Claude Code: Press `Ctrl+V` to paste
 
 </details>
 
@@ -128,7 +168,7 @@ That's it! No commands needed for the primary use case.
 
 ```mermaid
 graph LR
-    A[Windows Screenshot] --> B[ShareX/Snipping Tool]
+    A[Windows Screenshot] --> B[ShareX]
     B --> C[WSL Clip Bridge]
     C --> D[Ctrl+V in Claude Code]
     style D fill:#f9f,stroke:#333,stroke-width:2px
