@@ -22,76 +22,38 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             arch: amd64
-            strip_cmd: strip
           - target: aarch64-unknown-linux-gnu
             arch: arm64
-            strip_cmd: aarch64-linux-gnu-strip
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build with cross
+      uses: houseabsolute/actions-rust-cross@v1
       with:
-        toolchain: stable
-        targets: ${{ matrix.target }}
+        command: build
+        target: ${{ matrix.target }}
+        args: "--locked --release"
+        strip: true
     
-    - name: Install cross-compilation tools for ARM64
-      if: matrix.target == 'aarch64-unknown-linux-gnu'
+    - name: Create tarball and checksums
       run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-aarch64-linux-gnu
-    
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Cache cargo index
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Cache cargo build
-      uses: actions/cache@v4
-      with:
-        path: target
-        key: ${{ runner.os }}-${{ matrix.target }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Configure cargo for cross-compilation
-      if: matrix.target == 'aarch64-unknown-linux-gnu'
-      run: |
-        mkdir -p .cargo
-        cat >> .cargo/config.toml <<EOF
-        [target.aarch64-unknown-linux-gnu]
-        linker = "aarch64-linux-gnu-gcc"
-        EOF
-    
-    - name: Build release binary
-      run: |
-        cargo build --release --locked --target ${{ matrix.target }}
-        ${{ matrix.strip_cmd }} target/${{ matrix.target }}/release/xclip
-    
-    - name: Create tarball
-      run: |
+        # Create package directory
         mkdir -p wsl-clip-bridge
         cp target/${{ matrix.target }}/release/xclip wsl-clip-bridge/
         cp -r scripts wsl-clip-bridge/
         cp -r config wsl-clip-bridge/
         cp README.md wsl-clip-bridge/
         tar czf wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz wsl-clip-bridge
-    
-    - name: Create checksums
-      run: |
+
         # Copy binary with architecture suffix
         cp target/${{ matrix.target }}/release/xclip xclip-${{ matrix.arch }}
-        # Create checksum for tarball
+
+        # Create checksums
         sha256sum wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz > wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256
-        # Create checksum for binary
         sha256sum xclip-${{ matrix.arch }} > xclip-${{ matrix.arch }}.sha256
+
         # Create combined checksums file
         cat wsl-clip-bridge-linux-${{ matrix.arch }}.tar.gz.sha256 > checksums-${{ matrix.arch }}.txt
         echo "xclip-${{ matrix.arch }}  $(sha256sum xclip-${{ matrix.arch }} | cut -d' ' -f1)" >> checksums-${{ matrix.arch }}.txt
