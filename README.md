@@ -18,7 +18,7 @@ Built specifically for **[Claude Code](https://claude.ai/code)** screenshot past
 
 ## Why?
 
-Ever wanted to paste a Windows screenshot directly into [**Claude Code**](https://claude.ai/code) running in WSL? Traditional solutions require X11 servers, display forwarding, and complex setups. WSL Clip Bridge just works—no X11, no hassle.
+Ever wanted to paste a Windows screenshot directly into [**Claude Code**](https://claude.ai/code) running in WSL? Other solutions use background monitors, Windows tray apps, MCP servers, or require manual file management. WSL Clip Bridge is a simple drop-in xclip replacement—no daemons, no extra apps, just works.
 
 Perfect for:
 - 🤖 **[Claude Code](https://claude.ai/code)** → Paste screenshots directly in terminal
