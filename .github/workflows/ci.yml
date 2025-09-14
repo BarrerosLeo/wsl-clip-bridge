@@ -6,9 +6,16 @@ on:
   pull_request:
     branches: [ main ]
     types: [opened, synchronize, reopened]
+  merge_group:
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
