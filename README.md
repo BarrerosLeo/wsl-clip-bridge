@@ -22,6 +22,7 @@ Ever wanted to paste a Windows screenshot directly into [**Claude Code**](https:
 WSL Clip Bridge is a simple drop-in xclip replacement—no daemons, no extra apps, just works.
 
 Perfect for:
+
 - 🤖 **[Claude Code](https://claude.ai/code)** → Paste screenshots directly in terminal
 - 📸 **ShareX** → WSL clipboard workflows
 - 🖼️ Any Windows → Linux clipboard needs
@@ -33,6 +34,7 @@ Perfect for:
 <td>
 
 **🔒 Secure**
+
 - Optional path restrictions
 - Size limits
 - TTL auto-cleanup
@@ -41,6 +43,7 @@ Perfect for:
 <td>
 
 **⚡ Fast**
+
 - No X11/Wayland needed
 - File-based emulation
 - Native binaries
@@ -49,6 +52,7 @@ Perfect for:
 <td>
 
 **🎯 Compatible**
+
 - Drop-in xclip replacement
 - Same CLI arguments
 - Multi-arch (x64/ARM64)
@@ -71,6 +75,7 @@ iwr -useb https://raw.githubusercontent.com/camjac251/wsl-clip-bridge/main/scrip
 <summary><b>Manual Installation Options</b></summary>
 
 ### Download Pre-built Binary (WSL)
+
 ```bash
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 wget https://github.com/camjac251/wsl-clip-bridge/releases/latest/download/xclip-${ARCH}
@@ -79,6 +84,7 @@ sudo mv xclip-${ARCH} /usr/local/bin/xclip
 ```
 
 ### Build from Source (WSL)
+
 ```bash
 git clone https://github.com/camjac251/wsl-clip-bridge
 cd wsl-clip-bridge
@@ -108,12 +114,12 @@ That's it! No commands needed for the primary use case.
 
 ### Manual Commands
 
-| Action | Command |
-|--------|---------|
-| **Copy text** | `echo "Hello" \| xclip -i` |
-| **Paste text** | `xclip -o` |
-| **Copy image** | `xclip -t image/png -i screenshot.png` |
-| **Check formats** | `xclip -t TARGETS -o` |
+| Action            | Command                                |
+| ----------------- | -------------------------------------- |
+| **Copy text**     | `echo "Hello" \| xclip -i`             |
+| **Paste text**    | `xclip -o`                             |
+| **Copy image**    | `xclip -t image/png -i screenshot.png` |
+| **Check formats** | `xclip -t TARGETS -o`                  |
 
 ### ShareX Integration
 
@@ -220,12 +226,15 @@ max_file_size_mb = 100         # Prevent memory bombs
 <summary><b>Advanced Options</b></summary>
 
 ### Environment Variables
+
 - `WSL_CLIP_BRIDGE_TTL_SECS` - Override TTL
 - `WSL_CLIP_BRIDGE_CONFIG` - Custom config path
 
 ### Directory Access Control
+
 If not configured, all paths are allowed.
 To restrict access to specific directories (and their subdirectories):
+
 ```toml
 allowed_directories = [
   "/mnt/c/Users/YOU/Documents/ShareX",
@@ -235,6 +244,7 @@ allowed_directories = [
 ```
 
 ### Image Optimization
+
 - Auto-downscales to `max_image_dimension`
 - Preserves aspect ratio
 - Uses Lanczos3 (best for screenshots with text)
@@ -247,22 +257,26 @@ allowed_directories = [
 <summary><b>Common Issues</b></summary>
 
 ### `xclip: command not found`
+
 ```bash
 which xclip  # Should show /usr/local/bin/xclip
 echo $PATH   # Ensure includes install directory
 ```
 
 ### Permission Denied
+
 - If `allowed_directories` is configured, file must be in those paths
 - Check config: `cat ~/.config/wsl-clip-bridge/config.toml`
 
 ### Ctrl+V Not Working in Claude Code
+
 1. **Terminal is intercepting Ctrl+V**: Your terminal must forward the key to the app
    - Windows Terminal: Settings → Actions → Remove `Ctrl+V` binding
    - Warp: Settings → Keyboard Shortcuts → Set "Paste" to `Ctrl+Shift+V`, Clear "Alternate Terminal Paste"
 2. Test with: `xclip -t TARGETS -o` (should show `image/png` after taking screenshot)
 
 ### Images Not Pasting
+
 1. Verify format: `xclip -t TARGETS -o` should show `image/png`
 2. Check size: Must be under `max_file_size_mb`
 3. Supported: PNG, JPEG, GIF, WebP
@@ -306,6 +320,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 **Tech Stack:**
+
 - Rust 1.89+ (Edition 2024)
 - No unsafe code
 - GitHub Actions CI/CD
