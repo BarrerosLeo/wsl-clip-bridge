@@ -738,12 +738,13 @@ if (-not $SkipShareX) {
                 Write-Host ""
 
                 if (-not $AutoConfirm) {
-                    $closeShareX = Read-Host "Close ShareX now? (y/n)"
+                    $closeShareX = Read-Host "Close ShareX now? (Y/n)"
+                    if (-not $closeShareX) { $closeShareX = "y" }  # Default to yes
                 } else {
                     $closeShareX = "y"
                 }
 
-                if ($closeShareX -eq "y") {
+                if ($closeShareX -eq "y" -or $closeShareX -eq "Y") {
                     Write-Info "Closing ShareX..."
                     Stop-Process -Name "ShareX" -Force -ErrorAction SilentlyContinue
                     Start-Sleep -Seconds 3
@@ -999,8 +1000,9 @@ allowed_directories = [
                         Write-Host ""
 
                         if (-not $AutoConfirm) {
-                            $startShareX = Read-Host "Start ShareX now? (y/n)"
-                            if ($startShareX -eq "y") {
+                            $startShareX = Read-Host "Start ShareX now? (Y/n)"
+                            if (-not $startShareX) { $startShareX = "y" }  # Default to yes
+                            if ($startShareX -eq "y" -or $startShareX -eq "Y") {
                                 Write-Info "Starting ShareX..."
                                 $shareXPath = "${env:ProgramFiles}\ShareX\ShareX.exe"
                                 if (-not (Test-Path $shareXPath)) {
