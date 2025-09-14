@@ -12,8 +12,8 @@
 param(
     [switch]$SkipShareX,
     [switch]$AutoConfirm,
-    [ValidatePattern('^[a-zA-Z0-9_-]+$')]
-    [string]$WSLDistribution
+    [ValidatePattern('^$|^[a-zA-Z0-9_-]+$')]
+    [string]$WSLDistribution = ""
 )
 
 $ErrorActionPreference = "Stop"
