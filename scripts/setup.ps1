@@ -675,6 +675,10 @@ if ($existingConfig -and $existingConfig['maxDim']) {
     $maxDim = "1568"  # Optimal for Claude API default
 }
 
+# Set clipboard defaults (these are always the defaults unless in custom mode)
+$clipMode = "auto"
+$cacheWlImages = "true"
+
 # Show configuration summary if updating existing install
 if ($existingConfig) {
     Write-Host ""
@@ -705,6 +709,13 @@ if (-not $AutoConfirm) {
     Write-Host "      0 = Keep original size, 1568 = Optimal for Claude" -ForegroundColor Gray
     if (-not $existingConfig) {
         Write-Host "      Default: 1568 pixels" -ForegroundColor Gray
+    }
+    Write-Host ""
+    Write-Host "    * Clipboard Mode:" -ForegroundColor Cyan
+    Write-Host "      auto = Use Windows clipboard directly (WSLg)" -ForegroundColor Gray
+    Write-Host "      file_only = ShareX/file mode only" -ForegroundColor Gray
+    if (-not $existingConfig) {
+        Write-Host "      Default: auto (Windows clipboard enabled)" -ForegroundColor Gray
     }
     Write-Host ""
     Write-Host "    * Directory Access:" -ForegroundColor Cyan
@@ -749,6 +760,27 @@ if (-not $AutoConfirm) {
         if ($customDim -and $customDim -match '^\d+$' -and [int]$customDim -ge 0 -and [int]$customDim -le 10000) {
             $maxDim = $customDim
         }
+        Write-Host ""
+
+        # Clipboard mode
+        Write-Host "  Clipboard Integration Mode:" -ForegroundColor White
+        Write-Host "    auto = Check Windows clipboard first (recommended)" -ForegroundColor Gray
+        Write-Host "    file_only = ShareX/file mode only" -ForegroundColor Gray
+        $clipMode = Read-Host "  Enter mode [auto]"
+        if (-not $clipMode -or ($clipMode -ne "file_only")) {
+            $clipMode = "auto"
+        }
+        Write-Host ""
+
+        # Cache wl-images
+        Write-Host "  Cache Windows clipboard images?" -ForegroundColor White
+        Write-Host "    Improves performance for repeated pastes" -ForegroundColor Gray
+        $cacheImages = Read-Host "  Enable caching? (Y/n) [Y]"
+        if ($cacheImages -eq "n" -or $cacheImages -eq "N") {
+            $cacheWlImages = "false"
+        } else {
+            $cacheWlImages = "true"
+        }
     }
 }
 
@@ -786,14 +818,24 @@ if ($configureSettings -eq "y") {
     $configContent = @"
 # WSL Clip Bridge Configuration
 
-# Clipboard TTL in seconds
+# Clipboard data TTL in seconds
 ttl_secs = $ttl
 
-# Maximum image dimension (0 = no downscaling)
+# Maximum image dimension for automatic downscaling
+# Set to 1568 for optimal Claude API performance
+# Set to 0 to disable downscaling
 max_image_dimension = $maxDim
 
-# Security settings
-max_file_size_mb = 100$existingAllowedDirs
+# Maximum file size in MB
+max_file_size_mb = 100
+
+# Clipboard integration mode
+# "auto" = Check wl-clipboard first, fall back to files (default)
+# "file_only" = Only use file-based clipboard (ShareX mode)
+clipboard_mode = "$clipMode"
+
+# Cache images from wl-clipboard for faster subsequent access
+cache_wl_images = $cacheWlImages$existingAllowedDirs
 "@
 
     $tempConfigPath = Join-Path $env:TEMP "wsl-clip-config.toml"
@@ -825,6 +867,8 @@ max_file_size_mb = 100$existingAllowedDirs
     Write-Host "  Applied Settings:" -ForegroundColor Gray
     Write-Host "    - TTL: $ttl seconds $(if ($existingConfig -and $existingConfig['ttl'] -eq $ttl) { '(unchanged)' } else { '(updated)' })" -ForegroundColor Gray
     Write-Host "    - Image: $(if ($maxDim -eq '0') { 'Original size' } else { "$maxDim pixels" }) $(if ($existingConfig -and $existingConfig['maxDim'] -eq $maxDim) { '(unchanged)' } else { '(updated)' })" -ForegroundColor Gray
+    Write-Host "    - Clipboard: $clipMode mode$(if ($clipMode -eq 'auto') { ' (Windows clipboard enabled)' })" -ForegroundColor Gray
+    Write-Host "    - Caching: $(if ($cacheWlImages -eq 'true') { 'Enabled' } else { 'Disabled' })" -ForegroundColor Gray
     if ($preserveAllowedDirs) {
         Write-Host "    - Paths: Existing configuration preserved" -ForegroundColor Gray
     } else {

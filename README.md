@@ -18,13 +18,13 @@ Built specifically for **[Claude Code](https://claude.ai/code)** screenshot past
 
 ## Why?
 
-Ever wanted to paste a Windows screenshot directly into [**Claude Code**](https://claude.ai/code) running in WSL? Other solutions use background monitors, Windows tray apps, MCP servers, or require manual file management.
-WSL Clip Bridge is a simple drop-in xclip replacement—no daemons, no extra apps, just works.
+Ever wanted to paste a Windows screenshot directly into [**Claude Code**](https://claude.ai/code) running in WSL? This tool makes it effortless - copy from any Windows application and paste directly in WSL. The tool automatically detects Windows clipboard via WSLg's wl-clipboard integration, no complex setup required.
 
 Perfect for:
 
 - 🤖 **[Claude Code](https://claude.ai/code)** → Paste screenshots directly in terminal
-- 📸 **ShareX** → WSL clipboard workflows
+- 🌐 **Browser Images** → Copy from Chrome/Edge and paste in WSL
+- 📸 **ShareX** → Advanced screenshot workflows
 - 🖼️ Any Windows → Linux clipboard needs
 
 ## Features
@@ -45,8 +45,9 @@ Perfect for:
 **⚡ Fast**
 
 - No X11/Wayland needed
-- File-based emulation
-- Native binaries
+- Auto-detects Windows clipboard
+- BMP→PNG conversion built-in
+- File-based fallback
 
 </td>
 <td>
@@ -56,6 +57,7 @@ Perfect for:
 - Drop-in xclip replacement
 - Same CLI arguments
 - Multi-arch (x64/ARM64)
+- WSLg wl-clipboard support
 
 </td>
 </tr>
@@ -69,7 +71,7 @@ iwr -useb https://raw.githubusercontent.com/camjac251/wsl-clip-bridge/main/scrip
 ```
 
 > [!TIP]
-> The installer auto-detects your WSL distro, architecture, and sets up ShareX integration.
+> The installer auto-detects your WSL distro, architecture, and sets up wl-clipboard integration for direct Windows clipboard access.
 
 <details>
 <summary><b>Manual Installation Options</b></summary>
@@ -98,6 +100,11 @@ sudo install -m 755 target/release/xclip /usr/local/bin/
 
 ### Claude Code Workflow
 
+**Option 1: Direct Windows Clipboard**
+1. **Copy image** in Chrome, Paint, ShareX, etc. (Right-click → Copy Image)
+2. **In Claude Code terminal**: Press `Ctrl+V` to paste directly
+
+**Option 2: ShareX Integration**
 1. **Take screenshot** with ShareX
 2. **In Claude Code terminal**: Press `Ctrl+V` to paste directly
 
@@ -121,10 +128,17 @@ That's it! No commands needed for the primary use case.
 | **Copy image**    | `xclip -t image/png -i screenshot.png` |
 | **Check formats** | `xclip -t TARGETS -o`                  |
 
-### ShareX Integration
+### How It Works
+
+When WSLg is detected, the tool automatically uses wl-clipboard for seamless Windows integration:
+- **Automatic BMP→PNG conversion**: Windows clipboard BMPs are converted to PNG for efficiency (15-20x size reduction)
+- **Smart priority**: Checks Windows clipboard first (always latest), falls back to cached files
+- **Zero configuration**: Works out of the box with WSLg
+
+### ShareX Integration (Optional)
 
 > [!NOTE]
-> The installer configures this automatically. Manual setup instructions below if needed.
+> ShareX provides advanced screenshot features like annotations and uploads. The tool works with or without ShareX - the installer configures it automatically if detected.
 
 <details>
 <summary><b>Manual ShareX Setup</b></summary>
@@ -204,10 +218,11 @@ if %ERRORLEVEL% NEQ 0 (
 
 ```mermaid
 graph LR
-    A[Windows Screenshot] --> B[ShareX]
-    B --> C[WSL Clip Bridge]
-    C --> D[Ctrl+V in Claude Code]
-    style D fill:#f9f,stroke:#333,stroke-width:2px
+    A[Windows App/Browser] --> B[Windows Clipboard]
+    B --> C[wl-clipboard/WSLg]
+    C --> D[WSL Clip Bridge]
+    D --> E[Ctrl+V in Claude Code]
+    style E fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
 ## Configuration
@@ -216,10 +231,32 @@ graph LR
 > Config auto-creates at `~/.config/wsl-clip-bridge/config.toml` on first run.
 
 ```toml
-ttl_secs = 300                  # Clipboard expiry (5 min default)
-max_image_dimension = 1568      # Auto-downscale for APIs
-max_file_size_mb = 100         # Prevent memory bombs
-# allowed_directories = [...]   # Optional path restrictions
+# Clipboard data TTL in seconds
+ttl_secs = 300
+
+# Maximum image dimension for automatic downscaling
+# Set to 1568 for optimal Claude API performance
+# Set to 0 to disable downscaling
+max_image_dimension = 1568
+
+# Maximum file size in MB
+max_file_size_mb = 100
+
+# Clipboard integration mode
+# "auto" = Check wl-clipboard first, fall back to files (default)
+# "file_only" = Only use file-based clipboard (ShareX mode)
+clipboard_mode = "auto"
+
+# Cache images from wl-clipboard for faster subsequent access
+cache_wl_images = true
+
+# Security: Directory access restrictions (optional)
+# If not configured, all paths are allowed
+# allowed_directories = [
+#   "/mnt/c/Users/YOUR_USERNAME/Documents/ShareX",
+#   "/home/YOUR_USERNAME",
+#   "/tmp"
+# ]
 ```
 
 <details>
@@ -229,6 +266,13 @@ max_file_size_mb = 100         # Prevent memory bombs
 
 - `WSL_CLIP_BRIDGE_TTL_SECS` - Override TTL
 - `WSL_CLIP_BRIDGE_CONFIG` - Custom config path
+
+### Clipboard Modes Explained
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `auto` (default) | Checks wl-clipboard first, falls back to files | General use, works with any Windows app |
+| `file_only` | Only uses file-based clipboard | ShareX-only workflows, or if wl-clipboard has issues |
 
 ### Directory Access Control
 
@@ -248,6 +292,7 @@ allowed_directories = [
 - Auto-downscales to `max_image_dimension`
 - Preserves aspect ratio
 - Uses Lanczos3 (best for screenshots with text)
+- BMP images from Windows are automatically converted to PNG
 
 </details>
 
@@ -263,6 +308,18 @@ which xclip  # Should show /usr/local/bin/xclip
 echo $PATH   # Ensure includes install directory
 ```
 
+### Images from Windows apps not pasting
+
+1. **Check WSLg/wl-clipboard**: Run `wl-paste --list-types` after copying
+   - Should show `image/bmp` or `image/png`
+2. **Verify clipboard mode**: Check `~/.config/wsl-clip-bridge/config.toml`
+   - Ensure `clipboard_mode = "auto"` (not `"file_only"`)
+3. **Test conversion**: Copy image in Windows, then run:
+   ```bash
+   xclip -t TARGETS -o  # Should show image/png
+   xclip -o -t image/png > test.png  # Should save the image
+   ```
+
 ### Permission Denied
 
 - If `allowed_directories` is configured, file must be in those paths
@@ -273,13 +330,17 @@ echo $PATH   # Ensure includes install directory
 1. **Terminal is intercepting Ctrl+V**: Your terminal must forward the key to the app
    - Windows Terminal: Settings → Actions → Remove `Ctrl+V` binding
    - Warp: Settings → Keyboard Shortcuts → Set "Paste" to `Ctrl+Shift+V`, Clear "Alternate Terminal Paste"
-2. Test with: `xclip -t TARGETS -o` (should show `image/png` after taking screenshot)
+2. Test with: `xclip -t TARGETS -o` (should show `image/png` after copying an image)
 
-### Images Not Pasting
+### BMP files showing as 0 bytes
 
-1. Verify format: `xclip -t TARGETS -o` should show `image/png`
-2. Check size: Must be under `max_file_size_mb`
-3. Supported: PNG, JPEG, GIF, WebP
+This is normal - the tool converts BMP to PNG automatically. Use `xclip -o -t image/png` to get the converted image.
+
+### WSLg not available
+
+If you're on Windows 10 or WSLg isn't available:
+- The tool will still work with ShareX integration
+- Set `clipboard_mode = "file_only"` in config to disable wl-clipboard checks
 
 </details>
 
@@ -288,17 +349,32 @@ echo $PATH   # Ensure includes install directory
 <details>
 <summary><b>How It Works</b></summary>
 
-1. **No X11 Required**: Uses file-based clipboard emulation
-2. **Secure**: Rust with `#![forbid(unsafe_code)]`
-3. **Efficient**: TTL-based cleanup, automatic downscaling
-4. **Compatible**: Full xclip CLI compatibility
+1. **Dual-mode operation**:
+   - **wl-clipboard mode**: Direct access to Windows clipboard via WSLg
+   - **File mode**: ShareX or manual file operations
+2. **Smart format conversion**: BMP→PNG automatic conversion
+3. **Secure**: Rust with `#![forbid(unsafe_code)]`
+4. **Efficient**: TTL-based cleanup, automatic downscaling
+5. **Compatible**: Full xclip CLI compatibility
 
 ```
 ~/.cache/wsl-clip-bridge/
-├── text.txt        # Text clipboard
-├── image.bin       # Image data
+├── text.txt        # Text clipboard (fallback)
+├── image.bin       # Image data (cache)
 └── image.format    # MIME type
+
+Windows Clipboard → wl-clipboard (WSLg) → WSL Clip Bridge → Linux Apps
 ```
+
+### Priority System
+
+1. For output (`xclip -o`):
+   - Check wl-clipboard first (always has latest Windows clipboard)
+   - Convert BMP→PNG if needed
+   - Fall back to cached files if wl-clipboard unavailable
+
+2. For input (`xclip -i`):
+   - Always write to file cache (maintains ShareX compatibility)
 
 </details>
 
@@ -325,6 +401,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 - No unsafe code
 - GitHub Actions CI/CD
 - Multi-arch releases (x64/ARM64)
+- wl-clipboard integration for WSLg
 
 </details>
 

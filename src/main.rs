@@ -1,8 +1,9 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 use std::time::{Duration, SystemTime};
 
 use image::ImageFormat;
@@ -117,16 +118,19 @@ fn is_file_non_empty(path: &Path) -> bool {
 
 fn print_targets() {
     let ttl = load_ttl();
+    let mut printed = HashSet::new();
 
-    // Check for image and read its format
+    // Check file-based targets (existing logic)
     let image_path = get_image_path();
     if is_file_fresh(&image_path, ttl) {
         if let Ok(format) = fs::read_to_string(get_image_format_path()) {
             let format = format.trim();
             println!("{format}");
+            printed.insert(format.to_string());
             // Also output jpg alias for jpeg
             if format == "image/jpeg" {
                 println!("image/jpg");
+                printed.insert("image/jpg".to_string());
             }
         }
     } else if image_path.exists() {
@@ -135,11 +139,45 @@ fn print_targets() {
         let _ = fs::remove_file(get_image_format_path());
     }
 
+    // Add wl-clipboard targets
+    if wl_clipboard_available()
+        && let Ok(types) = get_wl_clipboard_types()
+    {
+        for typ in types {
+            match typ.as_str() {
+                "image/bmp" => {
+                    // Only advertise PNG conversion for BMP
+                    if !printed.contains("image/png") {
+                        println!("image/png");
+                        printed.insert("image/png".to_string());
+                    }
+                }
+                "image/png" | "image/jpeg" | "image/gif" | "image/webp" => {
+                    if !printed.contains(&typ) {
+                        println!("{typ}");
+                        printed.insert(typ.clone());
+                        if typ == "image/jpeg" && !printed.contains("image/jpg") {
+                            println!("image/jpg");
+                            printed.insert("image/jpg".to_string());
+                        }
+                    }
+                }
+                t if t.starts_with("text/") => {
+                    if printed.insert(typ.clone()) {
+                        println!("{typ}");
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Text targets (existing logic)
     let text_path = get_text_path();
-    if is_file_fresh(&text_path, ttl) {
+    if is_file_fresh(&text_path, ttl) && !printed.contains("text/plain;charset=utf-8") {
         println!("text/plain;charset=utf-8");
         println!("STRING");
-    } else if text_path.exists() {
+    } else if text_path.exists() && !is_file_fresh(&text_path, ttl) {
         // Clean up expired text file
         let _ = fs::remove_file(&text_path);
     }
@@ -155,38 +193,107 @@ fn output_type(mime: &str) -> io::Result<i32> {
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer)?;
                 io::stdout().write_all(&buffer)?;
-                Ok(0)
-            } else {
-                // Clean up expired file
-                if text_path.exists() {
-                    let _ = fs::remove_file(&text_path);
-                }
-                Ok(1)
+                return Ok(0);
             }
+
+            // Clean up expired file
+            if text_path.exists() {
+                let _ = fs::remove_file(&text_path);
+            }
+
+            // Try wl-clipboard if available
+            if wl_clipboard_available()
+                && let Ok(types) = get_wl_clipboard_types()
+                && types.iter().any(|t| t.starts_with("text/"))
+                && let Ok(data) = fetch_from_wl_clipboard("text/plain")
+            {
+                io::stdout().write_all(&data)?;
+                return Ok(0);
+            }
+            Ok(1)
         }
         "image/png" | "image/jpeg" | "image/jpg" | "image/gif" | "image/webp" => {
             let image_path = get_image_path();
             let ttl = load_ttl();
-            if is_file_fresh(&image_path, ttl) {
-                // Check if the stored format matches what was requested
-                if let Ok(stored_format) = fs::read_to_string(get_image_format_path()) {
-                    let stored_format = stored_format.trim();
-                    // Allow jpg as alias for jpeg
-                    let matches = mime == stored_format
-                        || (mime == "image/jpg" && stored_format == "image/jpeg");
-                    if matches {
-                        let mut file = File::open(image_path)?;
-                        let mut buffer = Vec::new();
-                        file.read_to_end(&mut buffer)?;
-                        io::stdout().write_all(&buffer)?;
-                        return Ok(0);
-                    }
+
+            // Priority 1: Check wl-clipboard first (always has the latest)
+            if wl_clipboard_available()
+                && let Ok(types) = get_wl_clipboard_types()
+            {
+                // Direct format available?
+                if types.contains(&mime.to_string())
+                    && let Ok(data) = fetch_from_wl_clipboard(mime)
+                {
+                    // Apply downscaling if configured
+                    let config = load_config();
+                    let max_dim = config.and_then(|c| c.max_image_dimension);
+                    let processed = downscale_image_if_needed(&data, mime, max_dim);
+
+                    io::stdout().write_all(&processed)?;
+                    return Ok(0);
                 }
-            } else if image_path.exists() {
-                // Clean up expired image files
+
+                // Special case: BMP → PNG conversion ONLY
+                if mime == "image/png"
+                    && types.contains(&"image/bmp".to_string())
+                    && let Ok(bmp_data) = fetch_from_wl_clipboard("image/bmp")
+                {
+                    // Convert BMP to PNG
+                    let img = image::load_from_memory(&bmp_data)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+                    let mut output = Cursor::new(Vec::new());
+                    img.write_to(&mut output, ImageFormat::Png)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    let png_data = output.into_inner();
+
+                    // Apply downscaling
+                    let config = load_config();
+                    let max_dim = config.as_ref().and_then(|c| c.max_image_dimension);
+                    let processed = downscale_image_if_needed(&png_data, "image/png", max_dim);
+
+                    // Cache if configured
+                    if config
+                        .as_ref()
+                        .is_none_or(|c| c.cache_wl_images.unwrap_or(true))
+                    {
+                        ensure_storage_directory()?;
+                        fs::write(&image_path, &processed)?;
+                        fs::write(get_image_format_path(), "image/png")?;
+                        #[cfg(unix)]
+                        {
+                            let _ =
+                                fs::set_permissions(&image_path, fs::Permissions::from_mode(0o600));
+                        }
+                    }
+
+                    io::stdout().write_all(&processed)?;
+                    return Ok(0);
+                }
+            }
+
+            // Priority 2: Fall back to cached file if still fresh
+            if is_file_fresh(&image_path, ttl)
+                && let Ok(stored_format) = fs::read_to_string(get_image_format_path())
+            {
+                let stored_format = stored_format.trim();
+                let matches =
+                    mime == stored_format || (mime == "image/jpg" && stored_format == "image/jpeg");
+                if matches {
+                    let mut file = File::open(&image_path)?;
+                    let mut buffer = Vec::new();
+                    file.read_to_end(&mut buffer)?;
+                    io::stdout().write_all(&buffer)?;
+                    return Ok(0);
+                }
+            }
+
+            // Clean up expired files
+            if image_path.exists() && !is_file_fresh(&image_path, ttl) {
                 let _ = fs::remove_file(&image_path);
                 let _ = fs::remove_file(get_image_format_path());
             }
+
             Ok(1)
         }
         _ => Ok(1),
@@ -407,6 +514,12 @@ struct BridgeConfig {
     max_file_size_mb: Option<u64>,
     #[serde(default)]
     allowed_directories: Option<Vec<String>>,
+
+    // wl-clipboard integration options
+    #[serde(default)]
+    clipboard_mode: Option<String>, // "auto", "file_only"
+    #[serde(default)]
+    cache_wl_images: Option<bool>, // Cache converted BMP→PNG
 }
 
 fn config_dir() -> PathBuf {
@@ -441,7 +554,7 @@ fn load_config() -> Option<BridgeConfig> {
                 let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
             }
         }
-        let default = "# WSL Clip Bridge Configuration\n\n# Clipboard data TTL in seconds (default: 300)\nttl_secs = 300\n\n# Maximum image dimension for automatic downscaling\n# Set to 1568 for optimal Claude API performance\n# Set to 0 to disable downscaling\nmax_image_dimension = 1568\n\n# Maximum file size in MB (default: 100)\nmax_file_size_mb = 100\n\n# Security: Directory access restrictions\n# If not configured, all paths are allowed\n# To restrict access to specific directories (and their subdirectories):\n#\n# allowed_directories = [\n#   \"/mnt/c/Users/YOUR_USERNAME/Documents/ShareX\",\n#   \"/home/YOUR_USERNAME\",\n#   \"/tmp\"\n# ]\n";
+        let default = "# WSL Clip Bridge Configuration\n\n# Clipboard data TTL in seconds (default: 300)\nttl_secs = 300\n\n# Maximum image dimension for automatic downscaling\n# Set to 1568 for optimal Claude API performance\n# Set to 0 to disable downscaling\nmax_image_dimension = 1568\n\n# Maximum file size in MB (default: 100)\nmax_file_size_mb = 100\n\n# Clipboard integration mode\n# \"auto\" = Check files first, then wl-clipboard (default)\n# \"file_only\" = Only use file-based clipboard (ShareX mode)\nclipboard_mode = \"auto\"\n\n# Cache images from wl-clipboard for faster subsequent access\ncache_wl_images = true\n\n# Security: Directory access restrictions\n# If not configured, all paths are allowed\n# To restrict access to specific directories (and their subdirectories):\n#\n# allowed_directories = [\n#   \"/mnt/c/Users/YOUR_USERNAME/Documents/ShareX\",\n#   \"/home/YOUR_USERNAME\",\n#   \"/tmp\"\n# ]\n";
         let _ = fs::write(&path, default);
         #[cfg(unix)]
         {
@@ -479,4 +592,44 @@ fn is_file_fresh(path: &Path, ttl: Duration) -> bool {
                 .duration_since(modified_time)
                 .is_ok_and(|elapsed| elapsed <= ttl && is_file_non_empty(path))
         })
+}
+
+// wl-clipboard integration functions
+fn wl_clipboard_available() -> bool {
+    // Check config first
+    let config = load_config();
+    if let Some(cfg) = config
+        && let Some(mode) = cfg.clipboard_mode.as_deref()
+        && mode == "file_only"
+    {
+        return false;
+    }
+
+    // Auto-detect wl-paste availability
+    Command::new("which")
+        .arg("wl-paste")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn get_wl_clipboard_types() -> io::Result<Vec<String>> {
+    let output = Command::new("wl-paste").arg("--list-types").output()?;
+
+    if output.status.success() {
+        let types = String::from_utf8_lossy(&output.stdout);
+        Ok(types.lines().map(String::from).collect())
+    } else {
+        Ok(vec![])
+    }
+}
+
+fn fetch_from_wl_clipboard(mime_type: &str) -> io::Result<Vec<u8>> {
+    let output = Command::new("wl-paste").arg("-t").arg(mime_type).output()?;
+
+    if output.status.success() {
+        Ok(output.stdout)
+    } else {
+        Err(io::Error::other("Failed to fetch from clipboard"))
+    }
 }
